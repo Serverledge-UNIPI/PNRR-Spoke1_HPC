@@ -145,13 +145,7 @@ func main() {
 		}
 	}
 
-	solver.InitNodeResources()
-	isSolverNode := config.GetBool(config.IS_SOLVER_NODE, false)
-	if isSolverNode {
-		go solver.Run()
-	} else {
-		go solver.WatchAllocation()
-	}
+	go solver.Run()
 
 	startAPIServer(e)
 }
@@ -167,6 +161,8 @@ func createSchedulingPolicy() scheduling.Policy {
 		return &scheduling.EdgePolicy{}
 	} else if policyConf == "custom1" {
 		return &scheduling.Custom1Policy{}
+	} else if policyConf == "energyaware" {
+		return &scheduling.EnergyAwarePolicy{}
 	} else {
 		return &scheduling.DefaultLocalPolicy{}
 	}
