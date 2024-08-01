@@ -19,6 +19,7 @@ import (
 	"github.com/grussorusso/serverledge/internal/metrics"
 	"github.com/grussorusso/serverledge/internal/registration"
 	"github.com/grussorusso/serverledge/internal/scheduling"
+	"github.com/grussorusso/serverledge/internal/solver"
 	"github.com/grussorusso/serverledge/utils"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -144,8 +145,15 @@ func main() {
 		}
 	}
 
-	startAPIServer(e)
+	solver.InitNodeResources()
+	isSolverNode := config.GetBool(config.IS_SOLVER_NODE, false)
+	if isSolverNode {
+		go solver.Run()
+	} else {
+		go solver.WatchAllocation()
+	}
 
+	startAPIServer(e)
 }
 
 func createSchedulingPolicy() scheduling.Policy {

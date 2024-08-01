@@ -157,6 +157,15 @@ func nearbyMonitoring() {
 	}
 }
 
-func GetServersMap(r *Registry) (map[string]*StatusInformation) {
-	return r.serversMap
+func GetServersMap() (map[string]*StatusInformation) {
+	Reg.RwMtx.Lock()
+    defer Reg.RwMtx.Unlock()
+
+    // Make a copy
+    serversMapCopy := make(map[string]*StatusInformation)
+    for key, value := range Reg.serversMap {
+        serversMapCopy[key] = value
+    }
+
+    return serversMapCopy
 }
