@@ -156,3 +156,7 @@ func nearbyMonitoring() {
 		}
 	}
 }
+
+func GetServersMap(r *Registry) (map[string]*StatusInformation) {
+	return r.serversMap
+}

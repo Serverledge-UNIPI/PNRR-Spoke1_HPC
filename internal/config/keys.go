@@ -64,3 +64,9 @@ const SCHEDULING_POLICY = "scheduler.policy"
 
 // Capacity of the queue (possibly) used by the scheduler
 const SCHEDULER_QUEUE_CAPACITY = "scheduler.queue.capacity"
+
+// True if the current node is a solver node
+const IS_SOLVER_NODE = "solver"
+
+// Epoch duration expressed in minutes
+const EPOCH_DURATION = "epoch.duration"

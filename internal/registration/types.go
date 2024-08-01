@@ -28,4 +28,9 @@ type StatusInformation struct {
 	AvailableCPUs           float64
 	DropCount               int64
 	Coordinates             vivaldi.Coordinate
+	TotalMemoryMB			int64
+	ComputationalCapacity	float64
+	MaximumCapacity			float64
+	IPC						float32
+	PowerConsumption		int32
 }
