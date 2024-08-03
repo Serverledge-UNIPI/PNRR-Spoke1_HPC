@@ -1,16 +1,5 @@
 package solver
 
-/*
-#cgo CFLAGS: -I/usr/include/python3.10
-#cgo LDFLAGS: -lpython3.10
-
-extern void initializePython();
-extern void finalizePython();
-extern int* allocateMemory(int size);
-extern void freeMemory(int* arr);
-extern const char* startSolver(int numberOfNodes, int numberOfFunctions, int* nodeMemory, int* nodeCapacity, int* maximumCapacity, int* nodeIpc, int* nodePowerConsumption, int* functionMemory, int* functionWorkload, int* functionDeadline, int* functionInvocations);
-*/
-import "C"
 import (
 	"encoding/json"
 	"log"
@@ -18,7 +7,8 @@ import (
 	"fmt"
 	"math"
 	"errors"
-	"unsafe"
+	"bytes"
+	"net/http"
 
 	"github.com/grussorusso/serverledge/internal/config"
 	"github.com/grussorusso/serverledge/internal/registration"
@@ -43,7 +33,7 @@ func Run() {
 	isSolverNode := config.GetBool(config.IS_SOLVER_NODE, false)
 
 	if isSolverNode {
-		epochDuration := config.GetInt(config.EPOCH_DURATION, 30)
+		epochDuration := config.GetInt(config.EPOCH_DURATION, 10)
 		solverTicker := time.NewTicker(time.Duration(epochDuration) * time.Second) // TODO: time.Minute
 		defer solverTicker.Stop()
 
@@ -86,7 +76,10 @@ func watchAllocation() {
 
 func solve() {
 	log.Println("Running solver")
-	
+
+	// Solver URL
+	url := fmt.Sprintf("http://%s/solve", config.GetString(config.SOLVER_ADDRESS, "localhost:5000"))
+
 	// Get all available servers and functions
 	serversMap := registration.GetServersMap()
 	functions, err := function.GetAll()
@@ -134,52 +127,37 @@ func solve() {
 	nodeInfo, nodeIp := prepareNodeInfo(serversMap)
 	functionInfo := prepareFunctionInfo(functions)
 
-	// Allocate and initialize memory for C arrays
-	cNodeInfo := allocateAndInitialize(nodeInfo.TotalMemoryMB)
-	defer C.freeMemory(cNodeInfo)
-	cComputationalCapacity := allocateAndInitialize(nodeInfo.ComputationalCapacity)
-	defer C.freeMemory(cComputationalCapacity)
-	cMaximumCapacity := allocateAndInitialize(nodeInfo.MaximumCapacity)
-	defer C.freeMemory(cMaximumCapacity)
-	cIPC := allocateAndInitialize(nodeInfo.IPC)
-	defer C.freeMemory(cIPC)
-	cPowerConsumption := allocateAndInitialize(nodeInfo.PowerConsumption)
-	defer C.freeMemory(cPowerConsumption)
+    requestData := map[string]interface{}{
+        "number_of_nodes":        len(serversMap) + 1,
+        "number_of_functions":    len(functions),
+        "node_memory":            nodeInfo.TotalMemoryMB,
+        "node_capacity":          nodeInfo.ComputationalCapacity,
+        "maximum_capacity":       nodeInfo.MaximumCapacity,
+        "node_ipc":               nodeInfo.IPC,
+        "node_power_consumption": nodeInfo.PowerConsumption,
+        "function_memory":        functionInfo.MemoryMB,
+        "function_workload":      functionInfo.Workload,
+        "function_deadline":      functionInfo.Deadline,
+        "function_invocations":   functionInfo.Invocations,
+    }
 
-	cFunctionMemory := allocateAndInitialize(functionInfo.MemoryMB)
-	defer C.freeMemory(cFunctionMemory)
-	cFunctionWorkload := allocateAndInitialize(functionInfo.Workload)
-	defer C.freeMemory(cFunctionWorkload)
-	cFunctionDeadline := allocateAndInitialize(functionInfo.Deadline)
-	defer C.freeMemory(cFunctionDeadline)
-	cFunctionInvocations := allocateAndInitialize(functionInfo.Invocations)
-	defer C.freeMemory(cFunctionInvocations)
+    requestBody, err := json.Marshal(requestData)
+    if err != nil {
+        log.Fatalf("Error marshalling request data: %v", err)
+    }
 
-	C.initializePython()
-	//defer C.finalizePython()
-
-	cResults := C.startSolver(
-		C.int(numberOfNodes),
-		C.int(numberOfFunctions),
-		cNodeInfo,
-		cComputationalCapacity,
-		cMaximumCapacity,
-		cIPC,
-		cPowerConsumption,
-		cFunctionMemory,
-		cFunctionWorkload,
-		cFunctionDeadline,
-		cFunctionInvocations,
-	)
-
-	// Process solver results
-	jsonStr := C.GoString(cResults)
+    // Create a POST request
+    response, err := http.Post(url, "application/json", bytes.NewBuffer(requestBody))
+    if err != nil {
+        fmt.Errorf("Error making request: %v", err)
+    }
+    defer response.Body.Close()
 
 	var results SolverResults
-	if err := json.Unmarshal([]byte(jsonStr), &results); err != nil {
-		log.Fatalf("Error unmarshalling results: %v", err)
-		return
-	}
+    err = json.NewDecoder(response.Body).Decode(&results)
+    if err != nil {
+        log.Fatalf("Error decoding response: %v", err)
+    }
 
 	// Log results
 	log.Printf("Solver walltime: %f", results.SolverWalltime)
@@ -296,17 +274,6 @@ func computeFunctionsAllocation(results SolverResults, functions []string, nodeI
 	}
 
 	return allocation, nil
-}
-
-// Helper function to allocate and initialize C memory
-func allocateAndInitialize(data []int) *C.int {
-	size := len(data)
-	cArray := C.allocateMemory(C.int(size))
-	for i := 0; i < size; i++ {
-		cElement := (*C.int)(unsafe.Pointer(uintptr(unsafe.Pointer(cArray)) + uintptr(i)*unsafe.Sizeof(*cArray)))
-		*cElement = C.int(data[i])
-	}
-	return cArray
 }
 
 func initNodeResources() error {

@@ -2,7 +2,7 @@ from ortools.sat.python import cp_model
 import yaml
 import json
 
-CONFIG_PATH = './internal/solver/configuration.yaml'
+CONFIG_PATH = 'configuration.yaml'
 
 # Colors for the prints
 RED = '\033[91m'
@@ -144,4 +144,4 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
         'functions_capacity': functions_capacity
     }
 
-    return json.dumps(results)
+    return results

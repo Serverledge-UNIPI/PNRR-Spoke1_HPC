@@ -70,3 +70,5 @@ const IS_SOLVER_NODE = "solver"
 
 // Epoch duration expressed in minutes
 const EPOCH_DURATION = "epoch.duration"
+
+const SOLVER_ADDRESS = "solver.address"
