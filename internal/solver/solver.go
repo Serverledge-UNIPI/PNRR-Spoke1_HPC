@@ -3,8 +3,6 @@ package solver
 /*
 #cgo CFLAGS: -I/usr/include/python3.10
 #cgo LDFLAGS: -lpython3.10
-#include <Python.h>
-#include <stdlib.h>
 
 extern void initializePython();
 extern void finalizePython();
@@ -97,6 +95,34 @@ func solve() {
 		return
 	}
 
+	// Log
+	for _, value := range serversMap {
+		log.Println("-----------------------------")
+		log.Printf("URL: %s\n", value.Url)
+		log.Printf("Available Warm Containers: %v\n", value.AvailableWarmContainers)
+		log.Printf("Available Memory (MB): %d\n", value.AvailableMemMB)
+		log.Printf("Available CPUs: %f\n", value.AvailableCPUs)
+		log.Printf("Drop Count: %d\n", value.DropCount)
+		log.Printf("Total Memory (MB): %v\n", value.TotalMemoryMB)
+		log.Printf("Computational Capacity: %f\n", value.ComputationalCapacity)
+		log.Printf("Maximum Capacity: %f\n", value.MaximumCapacity)
+		log.Printf("IPC: %v\n", value.IPC)
+		log.Printf("Power Consumption: %v\n", value.PowerConsumption)
+		log.Println("-----------------------------")
+	}
+
+	for _, functionName := range functions {
+		log.Println("-----------------------------")
+		f, _ := function.GetFunction(functionName)
+		log.Printf("Function name: %s\n", f.Name)
+		log.Printf("Function Memory (MB): %v\n", f.MemoryMB)
+		log.Printf("CPU Demand: %f\n", f.CPUDemand)
+		log.Printf("Workload: %v\n", f.Workload)
+		log.Printf("Deadline (ms): %v\n", f.Deadline)
+		log.Printf("Invocations: %v\n", f.Invocations)
+		log.Println("-----------------------------")
+	}
+
 	var numberOfNodes int = len(serversMap) + 1
 	var numberOfFunctions int = len(functions)
 
@@ -107,10 +133,6 @@ func solve() {
 	// Prepare data slices
 	nodeInfo, nodeIp := prepareNodeInfo(serversMap)
 	functionInfo := prepareFunctionInfo(functions)
-
-	// Initialize Python interpreter
-	C.initializePython()
-	//defer C.finalizePython()
 
 	// Allocate and initialize memory for C arrays
 	cNodeInfo := allocateAndInitialize(nodeInfo.TotalMemoryMB)
@@ -132,6 +154,9 @@ func solve() {
 	defer C.freeMemory(cFunctionDeadline)
 	cFunctionInvocations := allocateAndInitialize(functionInfo.Invocations)
 	defer C.freeMemory(cFunctionInvocations)
+
+	C.initializePython()
+	//defer C.finalizePython()
 
 	cResults := C.startSolver(
 		C.int(numberOfNodes),
