@@ -1,6 +1,5 @@
 from ortools.sat.python import cp_model
 import yaml
-import json
 
 CONFIG_PATH = 'configuration.yaml'
 

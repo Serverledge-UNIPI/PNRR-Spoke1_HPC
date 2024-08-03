@@ -78,7 +78,8 @@ func solve() {
 	log.Println("Running solver")
 
 	// Solver URL
-	url := fmt.Sprintf("http://%s/solve", config.GetString(config.SOLVER_ADDRESS, "localhost:5000"))
+	defaultHostport := fmt.Sprintf("%s:5000", utils.GetIpAddress().String())
+	url := fmt.Sprintf("http://%s/solve", config.GetString(config.SOLVER_ADDRESS, defaultHostport))
 
 	// Get all available servers and functions
 	serversMap := registration.GetServersMap()
