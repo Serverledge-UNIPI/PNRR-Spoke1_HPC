@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from solver import start_solver
+import argparse
 
 app = Flask(__name__)
 
@@ -27,4 +28,8 @@ def solve():
         return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    parser = argparse.ArgumentParser(description='Run the Flask application')
+    parser.add_argument('--port', type=int, default=5000, help='Port to run the application on')
+    args = parser.parse_args()
+    
+    app.run(debug=True, port=args.port)

@@ -149,7 +149,8 @@ func solve() {
     // Create a POST request
     response, err := http.Post(url, "application/json", bytes.NewBuffer(requestBody))
     if err != nil {
-        fmt.Errorf("Error making request: %v", err)
+        log.Printf("Error making request: %v", err)
+		return
     }
     defer response.Body.Close()
 
