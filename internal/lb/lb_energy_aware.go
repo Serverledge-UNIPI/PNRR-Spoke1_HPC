@@ -18,6 +18,8 @@ import (
 
 type EnergyAwareProxyServer struct{}
 
+var resetTargets bool
+
 func (energyAware *EnergyAwareProxyServer) newBalancer(targets []*middleware.ProxyTarget) middleware.ProxyBalancer {
 	return middleware.NewRoundRobinBalancer(targets)
 }
@@ -95,15 +97,22 @@ func dynamicTargetMiddleware(balancer middleware.ProxyBalancer, registry *regist
                 allocation := solver.GetAllocation()	
                 functionAllocation, ok := allocation[funcName]
                 if !ok {
-					log.Printf("No targets found for function %s\n", funcName)
+					log.Printf("No allocation found for function %s\n", funcName)
+
 					// Reset targets
-					targets, err := getEdgeTargets(registry)
-					if err != nil {
-						log.Printf("Cannot connect to registry to retrieve targets: %v\n", err)
-						os.Exit(2)
+					isAllocationEmpty := (len(allocation) == 0)
+					if resetTargets != isAllocationEmpty {
+						targets, err := getEdgeTargets(registry)
+						if err != nil {
+							log.Printf("Cannot connect to registry to retrieve targets: %v\n", err)
+							os.Exit(2)
+						}
+						
+						updateEdgeTargets(balancer, targets)
+						log.Printf("Updated targets for %s\n", funcName)
+						resetTargets = isAllocationEmpty
 					}
-					updateEdgeTargets(balancer, targets)
-					log.Printf("Updated targets for %s\n", funcName)
+
                     return next(c)
                 }
 				log.Printf("Current allocation for %s: %v\n", funcName, allocation[funcName])

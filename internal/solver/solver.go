@@ -31,7 +31,6 @@ func Init() {
 	}
 
 	isSolverNode := config.GetBool(config.IS_SOLVER_NODE, false)
-
 	if isSolverNode {
 		epochDuration := config.GetInt(config.EPOCH_DURATION, 10)
 		solverTicker := time.NewTicker(time.Duration(epochDuration) * time.Second) // TODO: time.Minute
@@ -48,6 +47,7 @@ func Init() {
 
 func WatchAllocation() {
 	log.Println("Running watcher for allocation")
+	
 	etcdClient, err := utils.GetEtcdClient()
 	if err != nil {
 		log.Fatal(err)
@@ -63,7 +63,6 @@ func WatchAllocation() {
 			allocation, err := getAllocationFromEtcd()
 			if err != nil {
 				log.Printf("Error retrieving allocation: %v\n", err)
-				continue
 			}
 
 			setAllocation(allocation)
@@ -300,13 +299,7 @@ func initNodeResources() error {
 func setAllocation(newAllocation FunctionsAllocation) {
     mu.Lock()
     defer mu.Unlock()
-
-	if newAllocation == nil {
-        // Se newAllocation è nil, imposta una struttura vuota
-        Allocation = FunctionsAllocation{}
-	} else {
-    	Allocation = newAllocation
-	}
+    Allocation = newAllocation
 }
 
 func GetAllocation() FunctionsAllocation {
@@ -347,7 +340,7 @@ func getAllocationFromEtcd() (FunctionsAllocation, error) {
 	etcdClient, err := utils.GetEtcdClient()
 	if err != nil {
 		log.Fatal(err)
-		return nil, err
+		return FunctionsAllocation{}, err
 	}
 
     ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -355,17 +348,17 @@ func getAllocationFromEtcd() (FunctionsAllocation, error) {
 
     resp, err := etcdClient.Get(ctx, "allocation")
     if err != nil {
-        return nil, fmt.Errorf("Failed to get allocation from etcd: %v", err)
+        return FunctionsAllocation{}, fmt.Errorf("Failed to get allocation from etcd: %v", err)
     }
 
     if len(resp.Kvs) == 0 {
-        return nil, fmt.Errorf("No data found for key 'allocation'")
+        return FunctionsAllocation{}, fmt.Errorf("No data found for key 'allocation'")
     }
 
     var allocation FunctionsAllocation
     err = json.Unmarshal(resp.Kvs[0].Value, &allocation)
     if err != nil {
-        return nil, fmt.Errorf("Failed to unmarshal allocation: %v", err)
+        return FunctionsAllocation{}, fmt.Errorf("Failed to unmarshal allocation: %v", err)
     }
 
     return allocation, nil
