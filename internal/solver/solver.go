@@ -54,12 +54,14 @@ func WatchAllocation() {
 		return
 	}
 
+	allocation, _ := getAllocationFromEtcd()
+	setAllocation(allocation)
+
     watchChan := etcdClient.Watch(context.Background(), "allocation")
     for watchResp := range watchChan {
         for _, event := range watchResp.Events {
             log.Printf("Event received! Type: %s Key: %s Value: %s\n", event.Type, event.Kv.Key, event.Kv.Value)
 
-			// Update functions allocation
 			allocation, err := getAllocationFromEtcd()
 			if err != nil {
 				log.Printf("Error retrieving allocation: %v\n", err)
@@ -362,4 +364,35 @@ func getAllocationFromEtcd() (FunctionsAllocation, error) {
     }
 
     return allocation, nil
+}
+
+func DecrementInstances(funcName string, nodeIp string) bool {
+    mu.Lock()        
+    defer mu.Unlock()
+
+    allocation, exists := Allocation[funcName]
+    if !exists {
+        log.Printf("Allocation for function '%s' not found\n", funcName)
+        return false
+    }
+
+	newValue := Allocation[funcName].Instances[nodeIp] - 1
+	if newValue == 0 {
+		delete(allocation.Instances, nodeIp)
+	} else {
+		allocation.Instances[nodeIp] = newValue
+	}
+	Allocation[funcName] = allocation
+
+	// Remove entry from the map if all requests have been managed
+	if len(allocation.Instances) == 0 {
+		delete(Allocation, funcName)
+	}
+	
+	err := saveAllocationToEtcd(Allocation)
+	if err != nil {
+        log.Println("Error")
+		return false
+	}
+	return true
 }

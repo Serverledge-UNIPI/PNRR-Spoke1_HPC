@@ -10,3 +10,5 @@ type ProxyServer interface {
     StartReverseProxy(e *echo.Echo, region string)
 	newBalancer(targets []*middleware.ProxyTarget) middleware.ProxyBalancer
 }
+
+var currentTargets []*middleware.ProxyTarget

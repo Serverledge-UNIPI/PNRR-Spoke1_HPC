@@ -4,10 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
 	"strings"
+	"time"
+	"bytes"
+	"net" 
+	"net/http"
+	"net/url"
 
 	"github.com/grussorusso/serverledge/internal/config"
 	"github.com/grussorusso/serverledge/internal/solver"
@@ -16,9 +19,20 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 )
 
+type CustomTransport struct {
+	Transport http.RoundTripper
+}
+
+// Custom structure for recording the response
+type responseRecorder struct {
+    http.ResponseWriter
+    buffer bytes.Buffer
+    status int
+}
+
 type EnergyAwareProxyServer struct{}
 
-var resetTargets bool
+var resetTargets bool = false
 
 func (energyAware *EnergyAwareProxyServer) newBalancer(targets []*middleware.ProxyTarget) middleware.ProxyBalancer {
 	return middleware.NewRoundRobinBalancer(targets)
@@ -35,16 +49,73 @@ func (energyAware *EnergyAwareProxyServer) StartReverseProxy(e *echo.Echo, regio
 	balancer := energyAware.newBalancer(targets)
 	currentTargets = targets
 	
-	e.Use(responseLogging)
+	e.Use(responseMiddleware)
 	e.Use(dynamicTargetMiddleware(balancer, registry))
-	e.Use(middleware.Proxy(balancer))
-
+	e.Use(middleware.ProxyWithConfig(
+		middleware.ProxyConfig{
+			Balancer:    balancer,
+			Transport: &CustomTransport{
+				Transport: http.DefaultTransport,
+			},
+		},
+	))
+	
 	go solver.WatchAllocation()
 
 	portNumber := config.GetInt(config.API_PORT, 1323)
 	if err := e.Start(fmt.Sprintf(":%d", portNumber)); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		e.Logger.Fatal("Shutting down the server")
 	}
+}
+
+func splitReqUrl(reqUrl string) (string, string, error) {
+	parsedURL, err := url.Parse(reqUrl)
+	if err != nil {
+		log.Printf("Error parsing URL: %v\n", err)
+		return "", "", err
+	}
+
+	ip, _, err := net.SplitHostPort(parsedURL.Host)
+	if err != nil {
+		log.Printf("Error splitting host and port: %v\n", err)
+		return "", "", err
+	}
+
+	// Remove prefix "/invoke/" from the URL
+	tokens := strings.Split(parsedURL.Path, "/")
+	if len(tokens) <= 2 {
+		log.Printf("Invalid function name")
+		return "", "", errors.New("Invalid function name")
+	}
+	funcName := tokens[2]
+	
+	return ip, funcName, nil
+}
+
+// Executes HTTP request and log additional information
+func (c *CustomTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	start := time.Now()
+	resp, err := c.Transport.RoundTrip(req)
+	duration := time.Since(start)
+
+	ip, funcName, err := splitReqUrl(req.URL.String())
+	if err != nil {
+		log.Printf("Error while extracting ip address from %v", req.URL)
+		return nil, err
+	}
+
+	if err != nil {
+		log.Printf("Request to %s failed: %v", req.URL, err)
+		return nil, err
+	}
+	log.Printf("Request to %s took %v", req.URL, duration)
+
+	// Decrement instances if request succeeded
+	if len(solver.Allocation) != 0 {
+		solver.DecrementInstances(funcName, ip)
+	}
+
+	return resp, nil
 }
 
 // Write the data into the buffer and into the ResponseWriter
@@ -59,28 +130,45 @@ func (rec *responseRecorder) WriteHeader(statusCode int) {
     rec.ResponseWriter.WriteHeader(statusCode)
 }
 
-func responseLogging(next echo.HandlerFunc) echo.HandlerFunc {
-    return func(c echo.Context) error {
+// Middleware for logging response information
+func responseMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
         // Create a custom recorder for the response
-        rec := &responseRecorder{
-            ResponseWriter: c.Response().Writer,
-        }
-        c.Response().Writer = rec
+		rec := &responseRecorder{
+			ResponseWriter: c.Response().Writer,
+		}
+		c.Response().Writer = rec
 
-        err := next(c)
-        if err != nil {
-            return err
-        }
+		err := next(c)
+		if err != nil {
+			// Log the error with details
+			if httpError, ok := err.(*echo.HTTPError); ok {
+				log.Printf("Error: Code=%d, Message=%s, RequestPath=%s, RequestMethod=%s",
+					httpError.Code,
+					httpError.Message,
+					c.Request().URL.Path,
+					c.Request().Method,
+				)
+			} else {
+				log.Printf("Error: %v, RequestPath=%s, RequestMethod=%s",
+					err,
+					c.Request().URL.Path,
+					c.Request().Method,
+				)
+			}
+			// Return a generic error response
+			return echo.NewHTTPError(http.StatusInternalServerError, "An error occurred")
+		}
 
-        log.Printf("Response Status: %d", rec.status)
-        log.Printf("Response Body: %s", rec.buffer.String())
+		log.Printf("Response Status: %d, Response Body: %s, RequestPath=%s, RequestMethod=%s",
+			rec.status,
+			rec.buffer.String(),
+			c.Request().URL.Path,
+			c.Request().Method,
+		)
 
-		// TODO: if ok, update instances
-		//if rec.status == 200 {
-		//}
-
-        return nil
-    }
+		return nil
+	}
 }
 
 func dynamicTargetMiddleware(balancer middleware.ProxyBalancer, registry *registration.Registry) echo.MiddlewareFunc {
@@ -93,14 +181,12 @@ func dynamicTargetMiddleware(balancer middleware.ProxyBalancer, registry *regist
                 funcName := tokens[2]
                 log.Printf("Request for function: %s\n", funcName)
 
-				// Get function allocation
-                allocation := solver.GetAllocation()	
-                functionAllocation, ok := allocation[funcName]
+                functionAllocation, ok := solver.Allocation[funcName]
                 if !ok {
 					log.Printf("No allocation found for function %s\n", funcName)
 
 					// Reset targets
-					isAllocationEmpty := (len(allocation) == 0)
+					isAllocationEmpty := (len(solver.Allocation) == 0)
 					if resetTargets != isAllocationEmpty {
 						targets, err := getEdgeTargets(registry)
 						if err != nil {
@@ -108,14 +194,16 @@ func dynamicTargetMiddleware(balancer middleware.ProxyBalancer, registry *regist
 							os.Exit(2)
 						}
 						
-						updateEdgeTargets(balancer, targets)
-						log.Printf("Updated targets for %s\n", funcName)
-						resetTargets = isAllocationEmpty
+						if len(targets) != 0 {
+							updateEdgeTargets(balancer, targets)
+							log.Printf("Updated targets for %s\n", funcName)
+							resetTargets = isAllocationEmpty
+						}
 					}
 
                     return next(c)
                 }
-				log.Printf("Current allocation for %s: %v\n", funcName, allocation[funcName])
+				log.Printf("Current allocation for %s: %v\n", funcName, solver.Allocation[funcName])
 
 				var targets []*middleware.ProxyTarget
                 for targetIp := range functionAllocation.Instances {
@@ -144,6 +232,8 @@ func dynamicTargetMiddleware(balancer middleware.ProxyBalancer, registry *regist
     }
 }
 
+// -------------------------- TARGET FUNCTIONS --------------------------
+
 func getEdgeTargets(registry *registration.Registry) ([]*middleware.ProxyTarget, error) {
 	edgeNodes, err := registry.GetAll(false)
 	if err != nil {
@@ -160,7 +250,6 @@ func getEdgeTargets(registry *registration.Registry) ([]*middleware.ProxyTarget,
 		targets = append(targets, &middleware.ProxyTarget{Name: addr, URL: parsedUrl})
 	}
 
-	log.Printf("Found %d targets\n", len(targets))
 	return targets, nil
 }
 
