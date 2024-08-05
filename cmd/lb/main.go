@@ -59,5 +59,11 @@ func main() {
 	// Register a signal handler to cleanup things on termination
 	registerTerminationHandler(e)
 
-	lb.StartReverseProxy(e, region)
+	var proxyServer lb.ProxyServer
+	if config.GetString(config.LB_TYPE, "default") == "energyaware" {
+		proxyServer = &lb.EnergyAwareProxyServer{}
+	} else {
+		proxyServer = &lb.DefaultProxyServer{}
+	}
+	proxyServer.StartReverseProxy(e, region)
 }

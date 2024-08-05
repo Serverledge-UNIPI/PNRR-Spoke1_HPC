@@ -2,6 +2,7 @@ package solver
 
 import (
 	"sync"
+	"log"
 )
 
 type NodeInformation struct {
@@ -39,3 +40,29 @@ var (
     Allocation FunctionsAllocation
     mu         sync.RWMutex
 )
+
+func ModifyInstance(funcName, nodeIp string, newValue int) {
+    mu.Lock()        
+    defer mu.Unlock()
+
+    allocation, exists := Allocation[funcName]
+    if !exists {
+        log.Println("Allocation for function '%s' not found", funcName)
+        return
+    }
+
+	if newValue == 0 {
+		// Remove nodeIp from Instances
+		delete(allocation.Instances, nodeIp)
+	} else {
+		// Ppdate the instance with new value
+		allocation.Instances[nodeIp] = newValue
+	}
+
+	Allocation[funcName] = allocation
+
+	err := saveAllocationToEtcd(Allocation)
+	if err != nil {
+        log.Println("Error")
+	}
+}

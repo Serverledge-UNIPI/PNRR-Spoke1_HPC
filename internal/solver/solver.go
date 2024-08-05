@@ -23,7 +23,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-func Run() {
+func Init() {
 	err := initNodeResources()
 	if err != nil {
 		log.Fatalf("Error in initializing node resources: %v", err)
@@ -43,12 +43,10 @@ func Run() {
 				solve()
 			}
 		}
-	} else {
-		watchAllocation()
 	}
 }
 
-func watchAllocation() {
+func WatchAllocation() {
 	log.Println("Running watcher for allocation")
 	etcdClient, err := utils.GetEtcdClient()
 	if err != nil {
@@ -69,7 +67,6 @@ func watchAllocation() {
 			}
 
 			setAllocation(allocation)
-			log.Printf("Updated Allocation: %v\n", Allocation)
         }
     }
 }
@@ -89,7 +86,7 @@ func solve() {
 		return
 	}
 
-	// Log
+	// Log system information
 	for _, value := range serversMap {
 		log.Println("-----------------------------")
 		log.Printf("URL: %s\n", value.Url)
@@ -186,6 +183,7 @@ func solve() {
 		log.Fatalf("Error saving allocation to Etcd: %v", err)
 	}
 
+	setAllocation(allocation)
 	log.Println("Solver terminated")
 }
 
@@ -252,10 +250,8 @@ func computeFunctionsAllocation(results SolverResults, functions []string, nodeI
 	for i, functionName := range functions {
 		ipInstancesMap := make(map[string]int)
 		for key, instances := range results.NodesInstances {
-			if floatVal, ok := instances[i].(float64); ok {
+			if floatVal, ok := instances[i].(float64); ok && floatVal > 0 {
 				ipInstancesMap[nodeIp[key]] = int(floatVal)
-			} else {
-				log.Printf("Expected float64 but found %T at index %d for nodeID %d", instances[i], i, key)
 			}
 		}
 
@@ -304,7 +300,13 @@ func initNodeResources() error {
 func setAllocation(newAllocation FunctionsAllocation) {
     mu.Lock()
     defer mu.Unlock()
-    Allocation = newAllocation
+
+	if newAllocation == nil {
+        // Se newAllocation è nil, imposta una struttura vuota
+        Allocation = FunctionsAllocation{}
+	} else {
+    	Allocation = newAllocation
+	}
 }
 
 func GetAllocation() FunctionsAllocation {

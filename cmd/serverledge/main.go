@@ -145,7 +145,7 @@ func main() {
 		}
 	}
 
-	go solver.Run()
+	go solver.Init()
 
 	startAPIServer(e)
 }

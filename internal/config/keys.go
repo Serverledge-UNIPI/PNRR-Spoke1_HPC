@@ -72,3 +72,6 @@ const IS_SOLVER_NODE = "solver"
 const EPOCH_DURATION = "epoch.duration"
 
 const SOLVER_ADDRESS = "solver.address"
+
+// Possible values: "default", "energyaware"
+const LB_TYPE = "lb"
