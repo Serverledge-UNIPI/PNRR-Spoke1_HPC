@@ -372,15 +372,18 @@ func DecrementInstances(funcName string, nodeIp string) bool {
 
     allocation, exists := Allocation[funcName]
     if !exists {
-        log.Printf("Allocation for function '%s' not found\n", funcName)
+        log.Printf("Allocation for function %s not found\n", funcName)
         return false
     }
 
 	newValue := Allocation[funcName].Instances[nodeIp] - 1
 	if newValue == 0 {
 		delete(allocation.Instances, nodeIp)
-	} else {
+	} else if newValue > 0 {
 		allocation.Instances[nodeIp] = newValue
+	} else {
+		log.Println("Invalid number of instances")
+		return false
 	}
 	Allocation[funcName] = allocation
 
@@ -391,7 +394,7 @@ func DecrementInstances(funcName string, nodeIp string) bool {
 	
 	err := saveAllocationToEtcd(Allocation)
 	if err != nil {
-        log.Println("Error")
+        log.Println("Error during saving allocation to etcd")
 		return false
 	}
 	return true
