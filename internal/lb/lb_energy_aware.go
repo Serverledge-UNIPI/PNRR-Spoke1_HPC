@@ -105,13 +105,13 @@ func (c *CustomTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	if err != nil {
-		log.Printf("Request to %s failed: %v", req.URL, err)
+		log.Printf("Request to %s failed (%v): %v", req.URL, resp.StatusCode, err)
 		return nil, err
 	}
-	log.Printf("Request to %s took %v", req.URL, duration)
+	log.Printf("Request to %s took %v with response status code %v", req.URL, duration, resp.StatusCode)
 
 	// Decrement instances if request succeeded
-	if len(solver.Allocation) != 0 {
+	if len(solver.Allocation) != 0 && resp.StatusCode == 200 {
 		solver.DecrementInstances(funcName, ip)
 	}
 
