@@ -195,11 +195,11 @@ func handleInvoke(funcName string, registry *registration.Registry) {
 
 		// Reset of the balancer targets	
 		if len(currentDefaultEdgeTargets) != 0 {
-			updateBalancerTargets(currentDefaultEdgeTargets, currentBalancerTargets)
+			updateBalancerTargets(currentDefaultEdgeTargets)
 		} else {
 			// Remove all balancer targets since no available
 			log.Printf("No edge nodes available")
-			updateBalancerTargets([]*middleware.ProxyTarget{}, currentBalancerTargets)
+			updateBalancerTargets([]*middleware.ProxyTarget{})
 		}
 
 		return
@@ -219,7 +219,7 @@ func handleInvoke(funcName string, registry *registration.Registry) {
 			targets = append(targets, &middleware.ProxyTarget{Name: addr, URL: parsedUrl})
 		}
 	}
-	updateBalancerTargets(targets, currentBalancerTargets)
+	updateBalancerTargets(targets)
 }
 
 func dynamicTargetMiddleware(registry *registration.Registry) echo.MiddlewareFunc {
@@ -238,7 +238,7 @@ func dynamicTargetMiddleware(registry *registration.Registry) echo.MiddlewareFun
 				handleInvoke(tokens[2], registry)
 			} else {
 				// Other request type (to be managed by the cloud)
-				updateBalancerTargets(currentDefaultCloudTargets, currentBalancerTargets)
+				updateBalancerTargets(currentDefaultCloudTargets)
 			}
 
 			log.Printf("Current targets (%d)", len(currentBalancerTargets))
@@ -254,14 +254,14 @@ func dynamicTargetMiddleware(registry *registration.Registry) echo.MiddlewareFun
 // -------------------------- TARGETS HANDLER FUNCTIONS --------------------------
 
 // Update balancer targets
-func updateBalancerTargets(newTargets []*middleware.ProxyTarget, currentTargets []*middleware.ProxyTarget) {
-	toKeep := make([]bool, len(currentTargets))
-	for i := range currentTargets {
+func updateBalancerTargets(newTargets []*middleware.ProxyTarget) {
+	toKeep := make([]bool, len(currentBalancerTargets))
+	for i := range currentBalancerTargets {
 		toKeep[i] = false
 	}
 	for _, t := range newTargets {
 		toAdd := true
-		for i, curr := range currentTargets {
+		for i, curr := range currentBalancerTargets {
 			if curr.Name == t.Name {
 				toKeep[i] = true
 				toAdd = false
@@ -275,7 +275,7 @@ func updateBalancerTargets(newTargets []*middleware.ProxyTarget, currentTargets 
 	}
 
 	toRemove := make([]string, 0)
-	for i, curr := range currentTargets {
+	for i, curr := range currentBalancerTargets {
 		if !toKeep[i] {
 			toRemove = append(toRemove, curr.Name)
 		}
