@@ -118,7 +118,8 @@ func solve() {
 	var numberOfNodes int = len(serversMap) + 1
 	var numberOfFunctions int = len(functions)
 
-	if numberOfNodes == 0 || numberOfFunctions == 0 {
+	if numberOfFunctions == 0 {
+		log.Printf("There are no registered functions")
 		return
 	}
 
@@ -127,8 +128,8 @@ func solve() {
 	functionInfo := prepareFunctionInfo(functions)
 
     requestData := map[string]interface{}{
-        "number_of_nodes":        len(serversMap) + 1,
-        "number_of_functions":    len(functions),
+        "number_of_nodes":        numberOfNodes,
+        "number_of_functions":    numberOfFunctions,
         "node_memory":            nodeInfo.TotalMemoryMB,
         "node_capacity":          nodeInfo.ComputationalCapacity,
         "maximum_capacity":       nodeInfo.MaximumCapacity,

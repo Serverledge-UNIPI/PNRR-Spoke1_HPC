@@ -198,11 +198,16 @@ func GetServerStatus(c echo.Context) error {
 	portNumber := config.GetInt("api.port", 1323)
 	url := fmt.Sprintf("http://%s:%d", utils.GetIpAddress().String(), portNumber)
 	response := registration.StatusInformation{
-		Url:            url,
-		AvailableMemMB: node.Resources.AvailableMemMB,
-		AvailableCPUs:  node.Resources.AvailableCPUs,
-		DropCount:      node.Resources.DropCount,
-		Coordinates:    *registration.Reg.Client.GetCoordinate(),
+		Url:					url,
+		AvailableMemMB:			node.Resources.AvailableMemMB,
+		AvailableCPUs:			node.Resources.AvailableCPUs,
+		DropCount:				node.Resources.DropCount,
+		Coordinates:    		*registration.Reg.Client.GetCoordinate(),
+		TotalMemoryMB:			node.Resources.TotalMemoryMB,
+		ComputationalCapacity:	node.Resources.ComputationalCapacity,
+		MaximumCapacity:		node.Resources.MaximumCapacity,
+		IPC:					node.Resources.IPC,
+		PowerConsumption:		node.Resources.PowerConsumption,
 	}
 
 	return c.JSON(http.StatusOK, response)
