@@ -17,7 +17,7 @@ type DefaultLocalPolicyEnergy struct {
 
 // Function used to set CPU demand assigned for the specific node
 func setFunctionCPUDemand(req *scheduledRequest) {
-	functionsAllocation := solver.GetAllocation()
+	functionsAllocation := solver.GetAllocation(true)
     nodeAllocation, _ := functionsAllocation[req.Fun.Name].NodeAllocations[utils.GetIpAddress().String()]
 	functionCPUDemand := math.Round((nodeAllocation.ComputationalCapacity / node.Resources.MaximumCapacity) * 100) / 100
 	req.Fun.CPUDemand = functionCPUDemand

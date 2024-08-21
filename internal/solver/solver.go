@@ -50,9 +50,7 @@ func Init() {
 				solve()
 			}
 		}
-	} else {
-		WatchFunctionsAllocation()
-	}
+	} 
 }
 
 func WatchFunctionsAllocation() {
@@ -327,10 +325,15 @@ func setAllocation(newFunctionsAllocation SystemFunctionsAllocation) {
     FunctionsAllocation = newFunctionsAllocation
 }
 
-func GetAllocation() SystemFunctionsAllocation {
-    mu.RLock()
-    defer mu.RUnlock()
-    return FunctionsAllocation
+func GetAllocation(fromEtcd bool) SystemFunctionsAllocation {
+	if fromEtcd {
+		functionsAllocation, _ := getAllocationFromEtcd()
+		return functionsAllocation
+	}
+
+	mu.RLock()
+	defer mu.RUnlock()
+	return FunctionsAllocation
 }
 
 func saveAllocationToEtcd(functionsAllocation SystemFunctionsAllocation) error {
