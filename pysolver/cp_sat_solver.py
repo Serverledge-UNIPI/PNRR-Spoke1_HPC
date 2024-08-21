@@ -21,9 +21,6 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
     solver_constants = data.get('constants', {})['solver']
     logging = solver_constants['console_logging']
     
-    total_system_memory_available = sum(node_memory[i] for i in range(number_of_nodes))
-    total_system_capacity_available = sum(node_capacity[i] for i in range(number_of_nodes))
-    
     # Create the model
     model = cp_model.CpModel()
 
@@ -61,14 +58,11 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
     if solver_constants['max_simulation_time']:
         solver.parameters.max_time_in_seconds = solver_constants['max_simulation_time'] 
 
-    status = solver.solve(model)
-
-    system_memory_utilization = 0
-    system_capacity_utilization = 0
-    nodes_capacity_utilization = [] # Utilization per node
+    nodes_capacity_utilization = [] # utilization per node
     nodes_instances = {i: [0] * number_of_functions for i in range(number_of_nodes)}
-    functions_capacity = [0] * number_of_functions
+    functions_capacity = {i: [0] * number_of_nodes for i in range(number_of_functions)}
     
+    status = solver.solve(model)
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:    
         for i in range(number_of_nodes):
             total_memory_assigned = 0
@@ -84,7 +78,7 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
                     total_memory_assigned += solver.value(n[i, j]) * function_memory[j]
 
                     nodes_instances[i][j] = solver.value(n[i, j])
-                    functions_capacity[j] = single_instance_capacity
+                    functions_capacity[j][i] = single_instance_capacity
                 
                     log(f'   Function {j + 1}: Instances={solver.value(n[i, j])}, Capacity={single_instance_capacity:.2f} Mhz, Execution time: {execution_time:.3f} s, Deadline: {(function_deadline[j]/1000):.3f} s', logging)
 
@@ -95,36 +89,9 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
 
         # Obtain objective function results
         active_nodes = [solver.value(y[i]) for i in range(number_of_nodes)]
-        
-        # Obtain system utilization
-        system_capacity_assigned = sum(solver.value(c[i, j]) for j in range(number_of_functions) for i in range (number_of_nodes))
-        system_capacity_available = total_system_capacity_available - system_capacity_assigned
-        system_capacity_utilization = (system_capacity_assigned/total_system_capacity_available) * 100
-
-        system_memory_assigned = sum(function_memory[j] * function_invocations[j] for j in range(number_of_functions))
-        system_memory_available = total_system_memory_available - system_memory_assigned
-        system_memory_utilization = (system_memory_assigned/total_system_memory_available) * 100
-
         objective_value = int(solver.ObjectiveValue())
-    else:     
-        # In order to understand how many capacity is still needed, it is estimated supposing that 
-        # all the functions are executed on a node having an IPC equal to the average of the IPCs of the nodes in the scenario
-        capacity_needed_estimation = 0
-        average_ipc = (sum(node_ipc) / len(node_ipc)) / 10
-        memory_needed = 0
-        
-        for i in range(number_of_functions):
-            capacity_estimation = function_workload[i] / ((function_deadline[i] / 1000) * average_ipc)
-            capacity_needed_estimation += capacity_estimation * function_invocations[i]
-            memory_needed += function_memory[i] * function_invocations[i]
-            
-        system_memory_available = total_system_memory_available - memory_needed
-        system_capacity_available = total_system_capacity_available - capacity_needed_estimation
-        
+    else:             
         # If no solution available, all nodes must be activated and will be at full utilization
-        system_memory_utilization = 100
-        system_capacity_utilization = 100
-        nodes_capacity_utilization = [100] * number_of_nodes
         active_nodes = [1] * number_of_nodes
         objective_value = sum(node_power_consumption)
     
@@ -132,12 +99,6 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
         'solver_status_name': solver.StatusName(status),
         'solver_walltime': solver.WallTime(),
         'objective_value': objective_value,
-        #'system_memory_utilization': system_memory_utilization,
-        #'system_capacity_utilization': system_capacity_utilization,
-        #'nodes_capacity_utilization': nodes_capacity_utilization,
-        #'system_memory_available': system_memory_available / 1024,
-        #'system_capacity_available': system_capacity_available / (10 ** 9),
-        #'active_nodes': sum(active_nodes),
         'active_nodes_indexes': active_nodes,
         'nodes_instances': nodes_instances,
         'functions_capacity': functions_capacity

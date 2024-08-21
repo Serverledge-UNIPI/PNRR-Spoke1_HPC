@@ -1,20 +1,22 @@
 package lb
 
 import (
-	"errors"
-	"fmt"
 	"log"
-	"strings"
+	"fmt"
 	"time"
+	"errors"
+	"sync"
+	"strings"
 	"bytes"
-	"net" 
+	
 	"net/http"
 	"net/url"
-	"sync"
+	"net"
 
 	"github.com/grussorusso/serverledge/internal/config"
 	"github.com/grussorusso/serverledge/internal/solver"
 	"github.com/grussorusso/serverledge/internal/registration"
+	
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
@@ -69,7 +71,7 @@ func (energyAware *EnergyAwareProxyServer) StartReverseProxy(e *echo.Echo, regio
 		},
 	))
 	
-	go solver.WatchAllocation()
+	go solver.WatchFunctionsAllocation()
 	go updateDefaultTargets(registry, region)
 
 	portNumber := config.GetInt(config.API_PORT, 1323)
@@ -128,7 +130,8 @@ func (c *CustomTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	if reqType == "invoke" && len(solver.Allocation) != 0 && resp.StatusCode == 200 {
+	// TODO: mutex
+	if reqType == "invoke" && len(solver.FunctionsAllocation) != 0 && resp.StatusCode == 200 {
 		solver.DecrementInstances(funcName, ip)
 	}
 
@@ -189,7 +192,7 @@ func responseMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 func handleInvoke(funcName string, registry *registration.Registry) {
-	functionAllocation, ok := solver.Allocation[funcName]
+	functionAllocations, ok := solver.FunctionsAllocation[funcName]
 	if !ok {
 		log.Printf("No allocation found for function %s\n", funcName)
 
@@ -204,12 +207,14 @@ func handleInvoke(funcName string, registry *registration.Registry) {
 
 		return
 	}
-	log.Printf("Current allocation for %s: %v\n", funcName, solver.Allocation[funcName])
+	log.Printf("Current allocation for %s: %v\n", funcName, solver.FunctionsAllocation[funcName])
 
 	// Update targets using allocation information
 	var targets = []*middleware.ProxyTarget{} 
-	for targetIp := range functionAllocation.Instances {
-		if functionAllocation.Instances[targetIp] != 0 {
+	for targetIp := range functionAllocations.NodeAllocations {
+		// Get node allocation info for the target node
+		nodeAllocationInfo, _ := functionAllocations.NodeAllocations[targetIp]
+		if nodeAllocationInfo.Instances != 0 {
 			addr := fmt.Sprintf("http://%s:%d", targetIp, config.GetInt(config.API_PORT, 1323))
 			parsedUrl, err := url.Parse(addr)
 			if err != nil {

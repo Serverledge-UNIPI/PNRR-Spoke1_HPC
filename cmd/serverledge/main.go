@@ -161,6 +161,8 @@ func createSchedulingPolicy() scheduling.Policy {
 		return &scheduling.EdgePolicy{}
 	} else if policyConf == "custom1" {
 		return &scheduling.Custom1Policy{}
+	} else if policyConf == "energy" {
+		return &scheduling.DefaultLocalPolicyEnergy{}
 	} else {
 		return &scheduling.DefaultLocalPolicy{}
 	}

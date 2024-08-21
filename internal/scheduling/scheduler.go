@@ -70,6 +70,13 @@ func Run(p Policy) {
 				metrics.AddCompletedInvocation(c.Fun.Name)
 				if c.ExecReport.SchedAction != SCHED_ACTION_OFFLOAD {
 					metrics.AddFunctionDurationValue(c.Fun.Name, c.ExecReport.Duration)
+
+					deadline := float64(c.Fun.Deadline) / 10e3
+					log.Printf("Deadline (s): %f | duration (s): %f", deadline, c.ExecReport.Duration) // TEST
+					if deadline < c.ExecReport.Duration {
+						log.Printf("Deadline failure for function %v", c.Fun.Name)
+						metrics.AddDeadlineFailures(c.Fun.Name)
+					}
 				}
 			}
 		}

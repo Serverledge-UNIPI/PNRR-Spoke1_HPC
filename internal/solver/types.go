@@ -1,9 +1,5 @@
 package solver
 
-import (
-	"sync"
-)
-
 type NodeInformation struct {
 	TotalMemoryMB			[]int
 	ComputationalCapacity	[]int
@@ -25,17 +21,19 @@ type SolverResults struct {
 	ObjectiveValue          float64             	`json:"objective_value"`
 	ActiveNodesIndexes      []int32             	`json:"active_nodes_indexes"`
 	NodesInstances          map[int][]interface{} 	`json:"nodes_instances"`
-	FunctionsCapacity       []float64				`json:"functions_capacity"`
+	FunctionsCapacity       map[int][]interface{}   `json:"functions_capacity"`
 }
 
-type FunctionAllocation struct {
-	Capacity  float64
-	Instances map[string]int
+// NodeAllocationInfo contains allocation details for a specific node
+type NodeAllocationInfo struct {
+    Instances          		int     `json:"instances"`           	// Number of instances allocated
+    ComputationalCapacity	float64 `json:"computational_capacity"` // Computation capacity to assign to the function on this node
 }
 
-type FunctionsAllocation map[string]FunctionAllocation
+// FunctionNodeAllocation maps a node address to its allocation information for a specific function
+type FunctionNodeAllocation struct {
+    NodeAllocations	map[string]NodeAllocationInfo `json:"node_allocations"` // Key: Node IP, Value: Node allocation info
+}
 
-var (
-    Allocation FunctionsAllocation
-    mu         sync.RWMutex
-)
+// SystemFunctionsAllocation maps a function name to its allocation across different nodes
+type SystemFunctionsAllocation map[string]FunctionNodeAllocation
