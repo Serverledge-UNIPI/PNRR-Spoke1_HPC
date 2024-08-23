@@ -25,7 +25,7 @@ import (
 
 var (
     FunctionsAllocation SystemFunctionsAllocation
-    mu         			sync.RWMutex
+    Mu         			sync.RWMutex
 )
 
 var epoch int32
@@ -40,14 +40,23 @@ func Init() {
 	isSolverNode := config.GetBool(config.IS_SOLVER_NODE, false)
 	if isSolverNode {
 		epoch = 0
-		epochDuration := config.GetInt(config.EPOCH_DURATION, 10)
+		epochDuration := config.GetInt(config.EPOCH_DURATION, 20)
 		solverTicker := time.NewTicker(time.Duration(epochDuration) * time.Second) // TODO: time.Minute
 		defer solverTicker.Stop()
 
+		time.Sleep(5 * time.Second)
+		fmt.Println("STARTED")
+		solve()
+
+		// Init metrics exporter
+		metrics.ConnectToPrometheus()
 		for {
 			select {
 			case <-solverTicker.C:
 				solve()
+				
+				// Metrics exporter
+				metrics.SaveMetrics(epoch)
 			}
 		}
 	} 
@@ -116,7 +125,6 @@ func solve() {
 		f, _ := function.GetFunction(functionName)
 		log.Printf("Function name: %s\n", f.Name)
 		log.Printf("Function Memory (MB): %v\n", f.MemoryMB)
-		log.Printf("CPU Demand: %f\n", f.CPUDemand)
 		log.Printf("Workload: %v\n", f.Workload)
 		log.Printf("Deadline (ms): %v\n", f.Deadline)
 		log.Printf("Invocations: %v\n", f.Invocations)
@@ -197,10 +205,12 @@ func solve() {
 	setAllocation(functionsAllocation)
 
 	if metrics.Enabled {
-		metrics.AddNodesStatus(results.ActiveNodesIndexes, nodeIp, epoch)
+		var solverFails int = 0
 		if results.SolverStatusName != "FEASIBLE" && results.SolverStatusName != "OPTIMAL" {
-			metrics.AddSolverFailure(epoch)
+			solverFails = 1
 		}
+		metrics.RecordSolverMetrics(results.ActiveNodesIndexes, epoch, solverFails, nodeInfo.PowerConsumption)
+		metrics.ResetCurrentFailures()
 		epoch++
 	}
 	
@@ -313,15 +323,15 @@ func initNodeResources() error {
 	node.Resources.ComputationalCapacity = cpuInfo[0].Mhz * float64(len(cpuInfo))
 	node.Resources.MaximumCapacity = cpuInfo[0].Mhz
 	node.Resources.IPC = 1 // TODO
-	node.Resources.PowerConsumption = 400 // TODO
+	node.Resources.PowerConsumption = int32(config.GetInt(config.NODE_POWER_CONSUMPTION, 0))
 	node.Resources.TotalMemoryMB = int64(vMemInfo.Total / 1e6)
 
 	return nil
 }
 
 func setAllocation(newFunctionsAllocation SystemFunctionsAllocation) {
-    mu.Lock()
-    defer mu.Unlock()
+    Mu.Lock()
+    defer Mu.Unlock()
     FunctionsAllocation = newFunctionsAllocation
 }
 
@@ -331,8 +341,8 @@ func GetAllocation(fromEtcd bool) SystemFunctionsAllocation {
 		return functionsAllocation
 	}
 
-	mu.RLock()
-	defer mu.RUnlock()
+	Mu.RLock()
+	defer Mu.RUnlock()
 	return FunctionsAllocation
 }
 
@@ -393,8 +403,8 @@ func getAllocationFromEtcd() (SystemFunctionsAllocation, error) {
 }
 
 func DecrementInstances(funcName string, nodeIp string) bool {
-    mu.Lock()        
-    defer mu.Unlock()
+    Mu.Lock()        
+    defer Mu.Unlock()
 
     functionsAllocation, exists := FunctionsAllocation[funcName]
     if !exists {

@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from cp_sat_solver import start_solver
+from cp_sat_solver_rate import start_solver
 from earliest_deadline_first_solver import start_edf
 import argparse
 

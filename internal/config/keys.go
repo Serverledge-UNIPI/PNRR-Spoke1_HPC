@@ -67,11 +67,15 @@ const SCHEDULER_QUEUE_CAPACITY = "scheduler.queue.capacity"
 
 // True if the current node is a solver node
 const IS_SOLVER_NODE = "solver"
+const SOLVER_ADDRESS = "solver.address"
 
 // Epoch duration expressed in minutes
 const EPOCH_DURATION = "epoch.duration"
 
-const SOLVER_ADDRESS = "solver.address"
+// TODO: remove
+const REGISTERED_FUNCTIONS = "registered.functions" 
+
+const NODE_POWER_CONSUMPTION = "node.power.consumption"
 
 // Possible values: "default", "energyaware"
 const LB_TYPE = "lb"

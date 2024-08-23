@@ -13,7 +13,7 @@ def log(message, logging):
         print(f'{message}')
 
 def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: list, node_capacity: list, maximum_capacity: list, node_ipc: list, node_power_consumption: list, 
-                 function_memory: list, function_workload: list,  function_deadline: list, function_invocations: list) -> dict:
+                 function_memory: list, function_workload: list, function_deadline: list, function_invocations: list) -> dict:
     # Retrieve CP-SAT parameters from the configuration file
     with open(CONFIG_PATH, 'r') as file:
         data = yaml.safe_load(file)
