@@ -4,7 +4,6 @@ import (
 	"log"
 	"fmt"
 	"time"
-	"sync"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 	"github.com/grussorusso/serverledge/internal/registration"
 	"github.com/grussorusso/serverledge/internal/node"
 	"github.com/grussorusso/serverledge/internal/function"
+	"github.com/grussorusso/serverledge/internal/cache"
 	"github.com/grussorusso/serverledge/internal/metrics"
 	"github.com/grussorusso/serverledge/utils"
 
@@ -23,47 +23,44 @@ import (
 	"golang.org/x/net/context"
 )
 
-var (
-    FunctionsAllocation SystemFunctionsAllocation
-    Mu         			sync.RWMutex
-)
-
 var epoch int32
 
-func Init() {
-	err := initNodeResources()
-	if err != nil {
-		log.Fatalf("Error in initializing node resources: %v", err)
-		return
-	}
+func getEpochDuration() time.Duration {
+	epochDuration := config.GetInt(config.EPOCH_DURATION, 20)
+	return time.Duration(epochDuration) * time.Second // TODO: fix to time.Minute
+}
 
+func Init() {
 	isSolverNode := config.GetBool(config.IS_SOLVER_NODE, false)
 	if isSolverNode {
 		epoch = 0
-		epochDuration := config.GetInt(config.EPOCH_DURATION, 20)
-		solverTicker := time.NewTicker(time.Duration(epochDuration) * time.Second) // TODO: time.Minute
+		solverTicker := time.NewTicker(getEpochDuration())
 		defer solverTicker.Stop()
 
-		time.Sleep(5 * time.Second)
-		fmt.Println("STARTED")
+		// Attempt to connect data exporter to Prometheus
+		if metrics.Enabled {
+			if err := metrics.ConnectToPrometheus(); !err {
+				log.Printf("Failed to connect to Prometheus: %v", err)
+			}
+		}
+
+		// TODO: remove
+		time.Sleep(10 * time.Second)
 		solve()
 
-		// Init metrics exporter
-		metrics.ConnectToPrometheus()
 		for {
 			select {
 			case <-solverTicker.C:
 				solve()
-				
-				// Metrics exporter
-				metrics.SaveMetrics(epoch)
 			}
 		}
-	} 
+	} else {
+		watchFunctionsAllocation()
+	}
 }
 
-func WatchFunctionsAllocation() {
-	log.Println("Running watcher for functions allocation")
+func watchFunctionsAllocation() {
+	log.Println("Running function allocation watcher")
 	
 	etcdClient, err := utils.GetEtcdClient()
 	if err != nil {
@@ -71,20 +68,34 @@ func WatchFunctionsAllocation() {
 		return
 	}
 
-	functionsAllocation, _ := getAllocationFromEtcd()
-	setAllocation(functionsAllocation)
-
     watchChan := etcdClient.Watch(context.Background(), "allocation")
     for watchResp := range watchChan {
         for _, event := range watchResp.Events {
-            log.Printf("Event received! Type: %s Key: %s Value: %s\n", event.Type, event.Kv.Key, event.Kv.Value)
+			switch event.Type {
+			case clientv3.EventTypePut:
+				log.Println("Etcd Event Type: PUT")
+				
+				// Deserialize JSON to obtain the SystemFunctionsAllocation struct
+				var allocation SystemFunctionsAllocation
+				err := json.Unmarshal(event.Kv.Value, &allocation)
+				if err != nil {
+					log.Printf("Error unmarshalling allocation: %v", err)
+					continue
+				}
 
-			functionsAllocation, err := getAllocationFromEtcd()
-			if err != nil {
-				log.Printf("Error retrieving functions allocation: %v\n", err)
+				// Update local cache
+				allocation.saveToCache()
+				log.Printf("Updated cache with new allocation: %v", allocation)
+
+			case clientv3.EventTypeDelete:
+				log.Println("Etcd Event Type: DELETE")
+
+				// Delete allocation from the local cache
+				deleteFromCache()
+
+			default:
+				log.Printf("Unhandled event type: %v\n", event.Type)
 			}
-
-			setAllocation(functionsAllocation)
         }
     }
 }
@@ -198,11 +209,12 @@ func solve() {
 	}
 
 	// Save functions allocation to Etcd
-	if err := saveAllocationToEtcd(functionsAllocation); err != nil {
+	if err := functionsAllocation.saveToEtcd(); err != nil {
 		log.Fatalf("Error saving functions allocation to Etcd: %v", err)
 	}
 
-	setAllocation(functionsAllocation)
+	// Save the new allocation to the local cache
+	functionsAllocation.saveToCache()
 
 	if metrics.Enabled {
 		var solverFails int = 0
@@ -211,6 +223,9 @@ func solve() {
 		}
 		metrics.RecordSolverMetrics(results.ActiveNodesIndexes, epoch, solverFails, nodeInfo.PowerConsumption)
 		metrics.ResetCurrentFailures()
+
+		// Save solver metrics through data exporter
+		metrics.SaveMetrics(epoch)
 		epoch++
 	}
 	
@@ -306,7 +321,7 @@ func computeFunctionsAllocation(results SolverResults, functions []string, nodeI
 	return functionsAllocation, nil
 }
 
-func initNodeResources() error {
+func InitNodeResources() error {
 	// Initialize node resources information
 	cpuInfo, err := cpu.Info()
 	if err != nil {
@@ -329,24 +344,34 @@ func initNodeResources() error {
 	return nil
 }
 
-func setAllocation(newFunctionsAllocation SystemFunctionsAllocation) {
-    Mu.Lock()
-    defer Mu.Unlock()
-    FunctionsAllocation = newFunctionsAllocation
+func (functionsAllocation *SystemFunctionsAllocation) saveToCache () {
+	cache.GetCacheInstance().Set("allocation", functionsAllocation, getEpochDuration())
 }
 
-func GetAllocation(fromEtcd bool) SystemFunctionsAllocation {
-	if fromEtcd {
-		functionsAllocation, _ := getAllocationFromEtcd()
-		return functionsAllocation
+func deleteFromCache () {
+	cache.GetCacheInstance().Delete("allocation")
+}
+
+func GetAllocationFromCache() (*SystemFunctionsAllocation, bool) {
+	systemFunctionsAllocation, found := cache.GetCacheInstance().Get("allocation")
+	if !found {
+		// Cache miss
+		return &SystemFunctionsAllocation{}, false
 	}
 
-	Mu.RLock()
-	defer Mu.RUnlock()
-	return FunctionsAllocation
+	// Cache hit
+	functionsAllocation, ok := systemFunctionsAllocation.(*SystemFunctionsAllocation)
+	if !ok {
+		// Type assertion failed
+		log.Println("Type assertion failed: expected *SystemFunctionsAllocation")
+		return &SystemFunctionsAllocation{}, false
+	}
+
+	functionsAllocationCopy := *functionsAllocation
+	return &functionsAllocationCopy, true
 }
 
-func saveAllocationToEtcd(functionsAllocation SystemFunctionsAllocation) error {
+func (functionsAllocation *SystemFunctionsAllocation) saveToEtcd() error {
 	etcdClient, err := utils.GetEtcdClient()
 	if err != nil {
 		log.Fatal(err)
@@ -359,7 +384,7 @@ func saveAllocationToEtcd(functionsAllocation SystemFunctionsAllocation) error {
 	}
 
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	resp, err := etcdClient.Grant(ctx, 60) // TODO: lease time
+	resp, err := etcdClient.Grant(ctx, int64(getEpochDuration() / time.Second)) // TODO: fix to time.Minute
 	if err != nil {
 		log.Fatal(err)
 		return err
@@ -374,11 +399,11 @@ func saveAllocationToEtcd(functionsAllocation SystemFunctionsAllocation) error {
 	return nil
 }
 
-func getAllocationFromEtcd() (SystemFunctionsAllocation, error) {
+func getFromEtcd() (*SystemFunctionsAllocation, error) {
 	etcdClient, err := utils.GetEtcdClient()
 	if err != nil {
 		log.Fatal(err)
-		return SystemFunctionsAllocation{}, err
+		return &SystemFunctionsAllocation{}, err
 	}
 
     ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -386,61 +411,65 @@ func getAllocationFromEtcd() (SystemFunctionsAllocation, error) {
 
     resp, err := etcdClient.Get(ctx, "allocation")
     if err != nil {
-        return SystemFunctionsAllocation{}, fmt.Errorf("Failed to get functions allocation from etcd: %v", err)
+        return &SystemFunctionsAllocation{}, fmt.Errorf("Failed to get functions allocation from etcd: %v", err)
     }
 
     if len(resp.Kvs) == 0 {
-        return SystemFunctionsAllocation{}, fmt.Errorf("No data found for key 'allocation'")
+        return &SystemFunctionsAllocation{}, fmt.Errorf("No data found for key 'allocation'")
     }
 
     var functionsAllocation SystemFunctionsAllocation
     err = json.Unmarshal(resp.Kvs[0].Value, &functionsAllocation)
     if err != nil {
-        return SystemFunctionsAllocation{}, fmt.Errorf("Failed to unmarshal functions allocation: %v", err)
+        return &SystemFunctionsAllocation{}, fmt.Errorf("Failed to unmarshal functions allocation: %v", err)
     }
 
-    return functionsAllocation, nil
+    return &functionsAllocation, nil
 }
 
-func DecrementInstances(funcName string, nodeIp string) bool {
-    Mu.Lock()        
-    defer Mu.Unlock()
 
-    functionsAllocation, exists := FunctionsAllocation[funcName]
-    if !exists {
-        log.Printf("Allocation for function %s not found\n", funcName)
-        return false
-    }
-
-	nodeAllocationInfo, nodeExists := functionsAllocation.NodeAllocations[nodeIp]
-	if !nodeExists {
-		log.Printf("Node %s not found for function %s\n", nodeIp, funcName)
+func DecrementInstances(allocation *SystemFunctionsAllocation, functionName string, nodeIp string) bool {
+	// Check if the function allocation exists
+	functionAllocation, exists := (*allocation)[functionName]
+	if !exists {
+		log.Printf("Function '%s' not found in allocation", functionName)
 		return false
 	}
 
-	newValue := nodeAllocationInfo.Instances - 1
+	// Check if node allocation exists
+	nodeAllocation, ok := functionAllocation.NodeAllocations[nodeIp]
+	if !ok {
+		log.Printf("Node %s not found in function %s allocation", nodeIp, functionName)
+		return false
+	}
+		
+	// Update the value
+	newValue := nodeAllocation.Instances - 1
 	if newValue == 0 {
 		// Remove node from the map if it handled all the requests
-		delete(functionsAllocation.NodeAllocations, nodeIp)
+		delete(functionAllocation.NodeAllocations, nodeIp)
+
+		// Remove function from the map if function has no more node allocation
+		if len(functionAllocation.NodeAllocations) == 0 {
+			delete(*allocation, functionName)
+			if len(*allocation) == 0 {
+				deleteFromCache()
+				return true
+			}
+		}
 	} else if newValue > 0 {
 		// Update node allocation info
-		nodeAllocationInfo.Instances = newValue
-		functionsAllocation.NodeAllocations[nodeIp] = nodeAllocationInfo
+		nodeAllocation.Instances = newValue
+		functionAllocation.NodeAllocations[nodeIp] = nodeAllocation
+		(*allocation)[functionName] = functionAllocation
 	} else {
 		log.Println("Invalid number of instances")
 		return false
 	}
-	FunctionsAllocation[funcName] = functionsAllocation
 
-	// Remove function from the map if all requests have been managed
-	if len(functionsAllocation.NodeAllocations) == 0 {
-		delete(FunctionsAllocation, funcName)
-	}
-	
-	err := saveAllocationToEtcd(FunctionsAllocation)
-	if err != nil {
-        log.Println("Error during saving functions allocation to etcd")
-		return false
-	}
+	// Put the updated allocation back into the cache
+	localCache := cache.GetCacheInstance()
+	remainingExpiration := localCache.GetExpiration("allocation")
+	localCache.Set("allocation", allocation, remainingExpiration)
 	return true
 }

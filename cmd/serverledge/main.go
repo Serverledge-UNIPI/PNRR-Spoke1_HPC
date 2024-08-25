@@ -139,13 +139,18 @@ func main() {
 	go scheduling.Run(schedulingPolicy)
 
 	if !isInCloud {
+		err = solver.InitNodeResources()
+		if err != nil {
+			log.Fatalf("Error in initializing node resources: %v", err)
+			return
+		}
+		go solver.Init()
+
 		err = registration.InitEdgeMonitoring(registry)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
-
-	go solver.Init()
 
 	startAPIServer(e)
 }

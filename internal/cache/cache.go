@@ -238,3 +238,27 @@ func New(defaultExpiration, cleanupInterval time.Duration, size int) *Cache {
 	items := make(map[string]*Item)
 	return newCacheWithJanitor(defaultExpiration, cleanupInterval, items, size)
 }
+
+// GetExpiration returns the expiration duration for a specific item.
+// If the item does not exist or has no expiration, it returns DefaultExpiration
+func (c *cache) GetExpiration(k string) time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	item, found := c.items[k]
+	if !found {
+		return DefaultExpiration // Item not found, return default expiration
+	}
+
+	if item.Expiration == 0 {
+		return NoExpiration // Item does not expire
+	}
+
+	// Calculate the remaining duration
+	now := time.Now().UnixNano()
+	if item.Expiration > now {
+		return time.Duration(item.Expiration - now) * time.Nanosecond
+	}
+
+	return DefaultExpiration // Item has expired or is in an invalid state
+}

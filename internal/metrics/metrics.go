@@ -141,15 +141,14 @@ func GetResourcesUsage() (float64, float64) {
 		log.Printf("Error in retrieving CPU information: %v\n", err)
         return 0.0, 0.0
     }
-	
-	log.Printf("CPU usage: %f%%\n", cpuPercent[0])
+	//log.Printf("CPU usage: %f%%\n", cpuPercent[0])
 
 	vMemInfo, err := mem.VirtualMemory()
 	if err != nil {
 		log.Fatalf("Error in retrieving memory information: %v", err)
 		return 0.0, 0.0
 	}
-	log.Printf("Memory usage: %f%%\n", vMemInfo.UsedPercent)
+	//log.Printf("Memory usage: %f%%\n", vMemInfo.UsedPercent)
 
     return cpuPercent[0], vMemInfo.UsedPercent
 }

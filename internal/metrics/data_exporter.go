@@ -18,7 +18,8 @@ import (
 
 var v1api v1.API
 
-func queryPrometheus(client v1.API, query string, duration time.Duration) (model.Value, error) {
+func queryPrometheus(query string, duration time.Duration) (model.Value, error) {
+	client := v1api
 	end := time.Now()
 	start := end.Add(-duration)
 
@@ -45,7 +46,8 @@ func queryPrometheus(client v1.API, query string, duration time.Duration) (model
 }
 
 // Function to execute a current query on Prometheus
-func queryPrometheusCurrent(client v1.API, query string) (model.Value, error) {
+func queryPrometheusCurrent(query string) (model.Value, error) {
+	client := v1api
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -141,41 +143,48 @@ func appendToCSVSolver(filename, timestamp string, epoch int32, numActiveNodes, 
 	return writer.Write(record)
 }
 
-func ConnectToPrometheus() {
+func ConnectToPrometheus() bool {
 	client, err := api.NewClient(api.Config{
 		Address: "http://172.16.2.182:9091",
 	})
 	if err != nil {
 		log.Fatalf("Error creating Prometheus client: %v", err)
+		return false
 	}
 
 	v1api = v1.NewAPI(client)
+	return true
 }
 
 func SaveMetrics(epoch int32) {
+	if v1api == nil {
+		log.Printf("Prometheus client is nil")
+		return
+	}
+
 	epochDuration := config.GetInt(config.EPOCH_DURATION, 20)
 
 	cpuQuery := fmt.Sprintf(`avg(avg_over_time(sedge_node_cpu_usage[%ds])) by (instance)`, epochDuration)
 	memQuery := fmt.Sprintf(`avg(avg_over_time(sedge_node_memory_usage[%ds])) by (instance)`, epochDuration)
 	deadlineQuery := `sedge_deadline_failures`
 
-	cpuUsage, err := queryPrometheus(v1api, cpuQuery, time.Duration(epochDuration)*time.Second)
+	cpuUsage, err := queryPrometheus(cpuQuery, time.Duration(epochDuration)*time.Second)
 	if err != nil {
-		log.Fatalf("Error querying Prometheus for CPU: %v", err)
+		fmt.Errorf("Error querying Prometheus for CPU: %v", err)
 	}
 
 	nodeCpuAverages := calculateAveragePerNode(cpuUsage)
 
-	memoryUsage, err := queryPrometheus(v1api, memQuery, time.Duration(epochDuration)*time.Second)
+	memoryUsage, err := queryPrometheus(memQuery, time.Duration(epochDuration)*time.Second)
 	if err != nil {
-		log.Fatalf("Error querying Prometheus for Memory: %v", err)
+		fmt.Errorf("Error querying Prometheus for Memory: %v", err)
 	}
 
 	nodeMemoryAverages := calculateAveragePerNode(memoryUsage)
 
-	deadlineFailures, err := queryPrometheusCurrent(v1api, deadlineQuery)
+	deadlineFailures, err := queryPrometheusCurrent(deadlineQuery)
 	if err != nil {
-		log.Fatalf("Error querying Prometheus for Deadline Failures: %v", err)
+		fmt.Errorf("Error querying Prometheus for Deadline Failures: %v", err)
 	}
 
 	timestamp := time.Now().Format(time.RFC3339)
@@ -199,7 +208,7 @@ func SaveMetrics(epoch int32) {
 			totalFailures[functionName] = float64(sample.Value)
 		}
 	} else {
-		fmt.Println("Expected vector type")
+		//fmt.Println("Expected vector type")
 		return
 	}
 

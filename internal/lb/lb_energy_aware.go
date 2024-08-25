@@ -71,7 +71,7 @@ func (energyAware *EnergyAwareProxyServer) StartReverseProxy(e *echo.Echo, regio
 		},
 	))
 	
-	go solver.WatchFunctionsAllocation()
+	go solver.Init()
 	go updateDefaultTargets(registry, region)
 
 	portNumber := config.GetInt(config.API_PORT, 1323)
@@ -130,9 +130,11 @@ func (c *CustomTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	// TODO: mutex
-	if reqType == "invoke" && len(solver.FunctionsAllocation) != 0 && resp.StatusCode == 200 {
-		solver.DecrementInstances(funcName, ip)
+	if reqType == "invoke" && resp.StatusCode == 200 {
+		allocation, found := solver.GetAllocationFromCache()
+		if found {
+			solver.DecrementInstances(allocation, funcName, ip)
+		}
 	}
 
 	return resp, nil
@@ -192,39 +194,50 @@ func responseMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 func handleInvoke(funcName string, registry *registration.Registry) {
-	functionAllocations, ok := solver.FunctionsAllocation[funcName]
-	if !ok {
-		log.Printf("No allocation found for function %s\n", funcName)
-
-		// Reset of the balancer targets	
-		if len(currentDefaultEdgeTargets) != 0 {
-			updateBalancerTargets(currentDefaultEdgeTargets)
-		} else {
-			// Remove all balancer targets since no available
-			log.Printf("No edge nodes available")
-			updateBalancerTargets([]*middleware.ProxyTarget{})
-		}
-
+	// Retrieve the allocation from the cache
+	functionsAllocation, found := solver.GetAllocationFromCache()
+	if !found {
+		log.Printf("Functions allocation not found in cache")
+		resetBalancerTargets()
 		return
 	}
-	log.Printf("Current allocation for %s: %v\n", funcName, solver.FunctionsAllocation[funcName])
 
-	// Update targets using allocation information
-	var targets = []*middleware.ProxyTarget{} 
-	for targetIp := range functionAllocations.NodeAllocations {
-		// Get node allocation info for the target node
-		nodeAllocationInfo, _ := functionAllocations.NodeAllocations[targetIp]
-		if nodeAllocationInfo.Instances != 0 {
-			addr := fmt.Sprintf("http://%s:%d", targetIp, config.GetInt(config.API_PORT, 1323))
-			parsedUrl, err := url.Parse(addr)
+	// Retrieve the allocation for the specified function
+	functionAllocation, ok := (*functionsAllocation)[funcName]
+	if !ok {
+		log.Printf("No allocation found for function %s\n", funcName)
+		resetBalancerTargets()
+		return
+	}
+
+	// Log the current allocation
+	log.Printf("Current allocation for %s: %v\n", funcName, functionAllocation)
+
+	// Create a list of targets for the load balancer
+	var targets []*middleware.ProxyTarget
+	for targetIP, nodeAllocationInfo := range functionAllocation.NodeAllocations {
+		if nodeAllocationInfo.Instances > 0 {
+			addr := fmt.Sprintf("http://%s:%d", targetIP, config.GetInt(config.API_PORT, 1323))
+			parsedURL, err := url.Parse(addr)
 			if err != nil {
-				log.Printf("Error parsing URL: %v\n", err)
+				log.Printf("Error parsing URL %s: %v\n", addr, err)
 				continue
 			}
-			targets = append(targets, &middleware.ProxyTarget{Name: addr, URL: parsedUrl})
+			targets = append(targets, &middleware.ProxyTarget{Name: addr, URL: parsedURL})
 		}
 	}
+
 	updateBalancerTargets(targets)
+}
+
+// Function to reset the load balancer targets
+func resetBalancerTargets() {
+	if len(currentDefaultEdgeTargets) > 0 {
+		updateBalancerTargets(currentDefaultEdgeTargets)
+	} else {
+		log.Printf("No edge nodes available")
+		updateBalancerTargets([]*middleware.ProxyTarget{})
+	}
 }
 
 func dynamicTargetMiddleware(registry *registration.Registry) echo.MiddlewareFunc {

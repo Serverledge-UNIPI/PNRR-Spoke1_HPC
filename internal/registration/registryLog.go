@@ -96,7 +96,7 @@ func monitoring() {
 	}
 
 	// Updates NearbyServersMap with the N closest nodes from serverMap
-	getRank(2) //todo change this value
+	getRank(10) //todo change this value
 	log.Printf("Nearby map at the end of monitoring: %v\n", Reg.NearbyServersMap)
 }
 
