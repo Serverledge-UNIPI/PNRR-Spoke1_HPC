@@ -309,7 +309,7 @@ func computeFunctionsAllocation(results SolverResults, functions []string, nodeI
 				// Type assertion
 				if capacityAssigned, ok := functionCapacities[key].(float64); ok {
 					nodesMap[nodeIp[key]] = NodeAllocationInfo{
-						PrewarmContainers: 				int(floatVal),
+						PrewarmContainers:		int(floatVal),
 						ComputationalCapacity:  capacityAssigned,
 					}
 					emptyAllocation = false
