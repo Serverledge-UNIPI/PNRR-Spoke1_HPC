@@ -16,9 +16,11 @@ import (
 	"github.com/grussorusso/serverledge/internal/config"
 	"github.com/grussorusso/serverledge/internal/function"
 	"github.com/grussorusso/serverledge/internal/registration"
+	"github.com/grussorusso/serverledge/internal/solver"
 	"github.com/labstack/echo/v4"
 )
 
+// proxyMap can contain both proxies associated with specific functions and default proxies
 var proxyMap FunctionProxyMap
 
 func registerTerminationHandler(r *registration.Registry, e *echo.Echo) {
@@ -48,15 +50,31 @@ func registerTerminationHandler(r *registration.Registry, e *echo.Echo) {
 }
 
 func handleRequest(c echo.Context) error {
+    var proxyIdentifier string
+    
+    // Get the request URI
+    requestURI := c.Request().RequestURI
+    
+    // Check if the URI starts with "/invoke/"
+    if strings.HasPrefix(requestURI, "/invoke/") {
+        _, found := solver.GetAllocationFromCache()
+        if found {
+            // Extract the function name by removing the "/invoke/" prefix
+            proxyIdentifier = strings.TrimPrefix(requestURI, "/invoke/")
+        } else {
+            // Use default edge nodes if allocation is not found
+            proxyIdentifier = "edge"
+        }
+    } else {
+        // Use default cloud nodes if the request is not an invoke one
+        proxyIdentifier = "cloud"
+    }
+			
 	// Select the target node
-	functionName := strings.TrimPrefix(c.Request().RequestURI, "/invoke/")
-	if functionName == c.Request().RequestURI {
-		functionName = "cloud"
-	}
-
-	target := proxyMap.getNextTarget(functionName)
+	target := proxyMap.getNextTarget(proxyIdentifier)
 	if target == nil {
-		return c.String(http.StatusInternalServerError, "No available targets")
+		log.Printf("No available targets")
+		return fmt.Errorf("No available targets")
 	}
 	log.Printf("Selected target: %v", target)
 
@@ -196,7 +214,7 @@ func updateDefaultEdgeTargets(registry *registration.Registry) error {
 	// Add/update proxy map
 	_, exists := proxyMap["edge"]
 	if !exists {
-		proxyMap.addProxy("edge", "random", edgeTargets, []int{})
+		proxyMap.addProxy("edge", "roundrobin", edgeTargets, []int{})
 	} else {
 		if len(edgeTargets) != 0 {
 			proxyMap.updateProxy("edge", edgeTargets, []int{})

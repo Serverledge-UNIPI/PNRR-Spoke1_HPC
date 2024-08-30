@@ -128,9 +128,9 @@ func handleDeleteEvent() {
     solver.DeleteFromCache()
 
     // Clear proxy map
-    for functionName := range proxyMap {
-        if functionName != "edge" && functionName != "cloud" {
-            proxyMap.deleteProxy(functionName)
+    for proxyIdentifier := range proxyMap {
+        if proxyIdentifier != "edge" && proxyIdentifier != "cloud" {
+            proxyMap.deleteProxy(proxyIdentifier)
         }
     }
 }
@@ -144,8 +144,14 @@ func getLBPolicy(policyName string, lbProxy interface{}) LBPolicy {
 			return newWeightedPolicy(weightedProxy)
 		}
 		return nil
-	default:
-		// Assume the default policy works with LBProxy
+	case "roundrobin":
+ 		// The round robin policy works with LBProxy
+         if proxy, ok := lbProxy.(*LBProxy); ok {
+			return newRoundRobinPolicy(proxy)
+		}
+		return nil   
+    default:
+		// The default policy works with LBProxy
 		if proxy, ok := lbProxy.(*LBProxy); ok {
 			return newRandomPolicy(proxy)
 		}
@@ -189,23 +195,23 @@ func createLBProxy(lbPolicyName string, targets []*url.URL, weights []int) Proxy
 }
 
 // addProxy adds a new proxy with load balancing capabilities for a specific function
-func (proxyMap FunctionProxyMap) addProxy(functionName string, lbPolicyName string, targets []*url.URL, weights []int) {
+func (proxyMap FunctionProxyMap) addProxy(proxyIdentifier string, lbPolicyName string, targets []*url.URL, weights []int) {
 	if len(targets) == 0 {
 		return
 	}
 
-	log.Printf("Adding a new lb proxy for function %s with policy %s", functionName, lbPolicyName)
-	proxyMap[functionName] = createLBProxy(lbPolicyName, targets, weights)
+	log.Printf("Adding a new lb proxy with identifier '%s' and policy '%s'", proxyIdentifier, lbPolicyName)
+	proxyMap[proxyIdentifier] = createLBProxy(lbPolicyName, targets, weights)
 
 	for i, target := range targets {
-		log.Printf("[%s] Added target %d: %v", functionName, i, target)
+		log.Printf("[%s] Added target %d: %v", proxyIdentifier, i, target)
 	}
 }
 
 // updateProxy updates an existing proxy 
-func (proxyMap FunctionProxyMap) updateProxy(functionName string, newTargets []*url.URL, newWeights []int) {
-	log.Printf("Updating lb proxy for function %s", functionName)
-	lbProxy := proxyMap[functionName]
+func (proxyMap FunctionProxyMap) updateProxy(proxyIdentifier string, newTargets []*url.URL, newWeights []int) {
+	log.Printf("Updating lb proxy with identifier '%s'", proxyIdentifier)
+	lbProxy := proxyMap[proxyIdentifier]
 
 	log.Printf("Previous targets: %v", lbProxy.getTargets())
 	lbProxy.setTargets(newTargets)
@@ -227,13 +233,13 @@ func (proxyMap FunctionProxyMap) updateProxy(functionName string, newTargets []*
 	}
 }
 
-func (proxyMap FunctionProxyMap) deleteProxy(functionName string) {
-    delete(proxyMap, functionName)
+func (proxyMap FunctionProxyMap) deleteProxy(proxyIdentifier string) {
+    delete(proxyMap, proxyIdentifier)
 }
 
 // getNextTarget per una specifica funzione
-func (proxyMap FunctionProxyMap) getNextTarget(functionName string) *url.URL {
-	lbProxy, exists := proxyMap[functionName]
+func (proxyMap FunctionProxyMap) getNextTarget(proxyIdentifier string) *url.URL {
+	lbProxy, exists := proxyMap[proxyIdentifier]
 	if !exists {
 		return nil
 	}

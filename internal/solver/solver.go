@@ -207,20 +207,22 @@ func solve() {
 		log.Printf("Node %d (%s) has instances: %v", nodeId, nodeIp[nodeId], instances)
 	}
 
-	// Retrive functions allocation
-	functionsAllocation, err := computeFunctionsAllocation(results, functions, nodeIp)
-	if err != nil {
-		log.Fatalf("Error processing functions allocation: %v", err)
-		return
-	}
+	if results.SolverStatusName == "FEASIBLE" || results.SolverStatusName == "OPTIMAL" {
+		// Retrive functions allocation
+		functionsAllocation, err := computeFunctionsAllocation(results, functions, nodeIp)
+		if err != nil {
+			log.Fatalf("Error processing functions allocation: %v", err)
+			return
+		}
 
-	// Save functions allocation to Etcd
-	if err := functionsAllocation.saveToEtcd(); err != nil {
-		log.Fatalf("Error saving functions allocation to Etcd: %v", err)
-	}
+		// Save functions allocation to Etcd
+		if err := functionsAllocation.saveToEtcd(); err != nil {
+			log.Fatalf("Error saving functions allocation to Etcd: %v", err)
+		}
 
-	// Save the new allocation to the local cache
-	functionsAllocation.SaveToCache()
+		// Save the new allocation to the local cache
+		functionsAllocation.SaveToCache()
+	}
 
 	if metrics.Enabled {
 		var solverFails int = 0
@@ -431,50 +433,4 @@ func getFromEtcd() (*SystemFunctionsAllocation, error) {
     }
 
     return &functionsAllocation, nil
-}
-
-func DecrementInstances(allocation *SystemFunctionsAllocation, functionName string, nodeIp string) bool {
-	// Check if the function allocation exists
-	functionAllocation, exists := (*allocation)[functionName]
-	if !exists {
-		log.Printf("Function '%s' not found in allocation", functionName)
-		return false
-	}
-
-	// Check if node allocation exists
-	nodeAllocation, ok := functionAllocation.NodeAllocations[nodeIp]
-	if !ok {
-		log.Printf("Node %s not found in function %s allocation", nodeIp, functionName)
-		return false
-	}
-		
-	// Update the value
-	newValue := nodeAllocation.PrewarmContainers - 1
-	if newValue == 0 {
-		// Remove node from the map if it handled all the requests
-		delete(functionAllocation.NodeAllocations, nodeIp)
-
-		// Remove function from the map if function has no more node allocation
-		if len(functionAllocation.NodeAllocations) == 0 {
-			delete(*allocation, functionName)
-			if len(*allocation) == 0 {
-				DeleteFromCache()
-				return true
-			}
-		}
-	} else if newValue > 0 {
-		// Update node allocation info
-		nodeAllocation.PrewarmContainers = newValue
-		functionAllocation.NodeAllocations[nodeIp] = nodeAllocation
-		(*allocation)[functionName] = functionAllocation
-	} else {
-		log.Println("Invalid number of instances")
-		return false
-	}
-
-	// Put the updated allocation back into the cache
-	localCache := cache.GetCacheInstance()
-	remainingExpiration := localCache.GetExpiration("allocation")
-	localCache.Set("allocation", allocation, remainingExpiration)
-	return true
 }
