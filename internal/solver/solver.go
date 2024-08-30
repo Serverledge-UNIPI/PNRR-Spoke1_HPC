@@ -60,44 +60,50 @@ func Init() {
 }
 
 func watchFunctionsAllocation() {
-	log.Println("Running function allocation watcher")
-	
-	etcdClient, err := utils.GetEtcdClient()
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
+    log.Println("Running functions allocation watcher")
+
+    etcdClient, err := utils.GetEtcdClient()
+    if err != nil {
+        log.Fatalf("Error getting etcd client: %v", err)
+    }
 
     watchChan := etcdClient.Watch(context.Background(), "allocation")
     for watchResp := range watchChan {
         for _, event := range watchResp.Events {
-			switch event.Type {
-			case clientv3.EventTypePut:
-				log.Println("Etcd Event Type: PUT")
-				
-				// Deserialize JSON to obtain the SystemFunctionsAllocation struct
-				var allocation SystemFunctionsAllocation
-				err := json.Unmarshal(event.Kv.Value, &allocation)
-				if err != nil {
-					log.Printf("Error unmarshalling allocation: %v", err)
-					continue
-				}
+            switch event.Type {
+            case clientv3.EventTypePut:
+                handlePutEvent(event)
 
-				// Update local cache
-				allocation.saveToCache()
-				log.Printf("Updated cache with new allocation: %v", allocation)
+            case clientv3.EventTypeDelete:
+                handleDeleteEvent()
 
-			case clientv3.EventTypeDelete:
-				log.Println("Etcd Event Type: DELETE")
-
-				// Delete allocation from the local cache
-				deleteFromCache()
-
-			default:
-				log.Printf("Unhandled event type: %v\n", event.Type)
-			}
+            default:
+                log.Printf("Unhandled event type: %v", event.Type)
+            }
         }
     }
+}
+
+func handlePutEvent(event *clientv3.Event) {
+    log.Println("Etcd Event Type: PUT")
+
+	// Deserialize JSON to obtain the SystemFunctionsAllocation struct
+	var allocation SystemFunctionsAllocation
+	err := json.Unmarshal(event.Kv.Value, &allocation)
+	if err != nil {
+		log.Printf("Error unmarshalling allocation: %v", err)
+		return
+	}
+
+	// Update local cache
+	allocation.SaveToCache()
+	log.Printf("Updated cache with new allocation: %v", allocation)
+}
+
+func handleDeleteEvent() {
+	log.Println("Etcd Event Type: DELETE")
+	// Delete allocation from the local cache
+	DeleteFromCache()
 }
 
 func solve() {
@@ -134,11 +140,11 @@ func solve() {
 	for _, functionName := range functions {
 		log.Println("-----------------------------")
 		f, _ := function.GetFunction(functionName)
-		log.Printf("Function name: %s\n", f.Name)
+		log.Printf("Function Name: %s\n", f.Name)
 		log.Printf("Function Memory (MB): %v\n", f.MemoryMB)
 		log.Printf("Workload: %v\n", f.Workload)
 		log.Printf("Deadline (ms): %v\n", f.Deadline)
-		log.Printf("Invocations: %v\n", f.Invocations)
+		log.Printf("Peak Invocations: %v\n", f.PeakInvocations)
 		log.Println("-----------------------------")
 	}
 
@@ -155,17 +161,17 @@ func solve() {
 	functionInfo := prepareFunctionInfo(functions)
 
     requestData := map[string]interface{}{
-        "number_of_nodes":        numberOfNodes,
-        "number_of_functions":    numberOfFunctions,
-        "node_memory":            nodeInfo.TotalMemoryMB,
-        "node_capacity":          nodeInfo.ComputationalCapacity,
-        "maximum_capacity":       nodeInfo.MaximumCapacity,
-        "node_ipc":               nodeInfo.IPC,
-        "node_power_consumption": nodeInfo.PowerConsumption,
-        "function_memory":        functionInfo.MemoryMB,
-        "function_workload":      functionInfo.Workload,
-        "function_deadline":      functionInfo.Deadline,
-        "function_invocations":   functionInfo.Invocations,
+        "number_of_nodes":				numberOfNodes,
+        "number_of_functions":			numberOfFunctions,
+        "node_memory":					nodeInfo.TotalMemoryMB,
+        "node_capacity":				nodeInfo.ComputationalCapacity,
+        "maximum_capacity":				nodeInfo.MaximumCapacity,
+        "node_ipc":						nodeInfo.IPC,
+        "node_power_consumption":		nodeInfo.PowerConsumption,
+        "function_memory":				functionInfo.MemoryMB,
+        "function_workload":			functionInfo.Workload,
+        "function_deadline":			functionInfo.Deadline,
+        "function_peak_invocations":	functionInfo.PeakInvocations,
     }
 
     requestBody, err := json.Marshal(requestData)
@@ -193,12 +199,12 @@ func solve() {
 	log.Printf("Energy consumption: %f", results.ObjectiveValue)
 	log.Printf("Active nodes: %v", results.ActiveNodesIndexes)
 
-	for functionID, functionsCapacity := range results.FunctionsCapacity {
-		log.Printf("Function %d computational capacity: %v", functionID, functionsCapacity)
+	for functionId, functionCapacity := range results.FunctionCapacities {
+		log.Printf("Function %d computational capacities: %v", functionId, functionCapacity)
 	}
 
-	for nodeID, instances := range results.NodesInstances {
-		log.Printf("Node %d (%s) has instances: %v", nodeID, nodeIp[nodeID], instances)
+	for nodeId, instances := range results.NodeInstances {
+		log.Printf("Node %d (%s) has instances: %v", nodeId, nodeIp[nodeId], instances)
 	}
 
 	// Retrive functions allocation
@@ -214,7 +220,7 @@ func solve() {
 	}
 
 	// Save the new allocation to the local cache
-	functionsAllocation.saveToCache()
+	functionsAllocation.SaveToCache()
 
 	if metrics.Enabled {
 		var solverFails int = 0
@@ -251,7 +257,7 @@ func prepareNodeInfo(serversMap map[string]*registration.StatusInformation) (Nod
         nodeInfo.PowerConsumption[i] = int(server.PowerConsumption)
 
         // Get node IP address
-        nodeIp[i] = server.Url[7:len(server.Url) - 5]
+        nodeIp[i] = server.Url
 		i++
     }
 
@@ -261,17 +267,17 @@ func prepareNodeInfo(serversMap map[string]*registration.StatusInformation) (Nod
     nodeInfo.IPC[i] = int(node.Resources.IPC * 10)
     nodeInfo.PowerConsumption[i] = int(node.Resources.PowerConsumption)
 
-	nodeIp[i] = utils.GetIpAddress().String()
+	nodeIp[i] = fmt.Sprintf("http://%s:%d", utils.GetIpAddress().String(), config.GetInt(config.API_PORT, 1323))
 
 	return nodeInfo, nodeIp
 }
 
 func prepareFunctionInfo(functions []string) FunctionInformation {
 	functionInfo := FunctionInformation{
-		MemoryMB:		make([]int, len(functions)),
-		Workload:		make([]int, len(functions)),
-		Deadline:		make([]int, len(functions)),
-		Invocations:	make([]int, len(functions)),
+		MemoryMB:			make([]int, len(functions)),
+		Workload:			make([]int, len(functions)),
+		Deadline:			make([]int, len(functions)),
+		PeakInvocations:	make([]int, len(functions)),
 	}
 
 	for i, functionName := range functions {
@@ -284,7 +290,7 @@ func prepareFunctionInfo(functions []string) FunctionInformation {
 		functionInfo.MemoryMB[i] = int(f.MemoryMB)
 		functionInfo.Workload[i] = int(f.Workload / 1e6)
 		functionInfo.Deadline[i] = int(f.Deadline)
-		functionInfo.Invocations[i] = int(f.Invocations)
+		functionInfo.PeakInvocations[i] = int(f.PeakInvocations)
 	}
 
 	return functionInfo
@@ -295,15 +301,15 @@ func computeFunctionsAllocation(results SolverResults, functions []string, nodeI
 	
 	for i, functionName := range functions {
 		nodesMap := make(map[string]NodeAllocationInfo)
-		functionsCapacity := results.FunctionsCapacity[i]
+		functionCapacities := results.FunctionCapacities[i]
 		
 		emptyAllocation := true
-		for key, instances := range results.NodesInstances {
+		for key, instances := range results.NodeInstances {
 			if floatVal, ok := instances[i].(float64); ok && floatVal > 0 {
 				// Type assertion
-				if capacityAssigned, ok := functionsCapacity[key].(float64); ok {
+				if capacityAssigned, ok := functionCapacities[key].(float64); ok {
 					nodesMap[nodeIp[key]] = NodeAllocationInfo{
-						Instances: 				int(floatVal),
+						PrewarmContainers: 				int(floatVal),
 						ComputationalCapacity:  capacityAssigned,
 					}
 					emptyAllocation = false
@@ -344,11 +350,11 @@ func InitNodeResources() error {
 	return nil
 }
 
-func (functionsAllocation *SystemFunctionsAllocation) saveToCache () {
+func (functionsAllocation *SystemFunctionsAllocation) SaveToCache () {
 	cache.GetCacheInstance().Set("allocation", functionsAllocation, getEpochDuration())
 }
 
-func deleteFromCache () {
+func DeleteFromCache () {
 	cache.GetCacheInstance().Delete("allocation")
 }
 
@@ -427,7 +433,6 @@ func getFromEtcd() (*SystemFunctionsAllocation, error) {
     return &functionsAllocation, nil
 }
 
-
 func DecrementInstances(allocation *SystemFunctionsAllocation, functionName string, nodeIp string) bool {
 	// Check if the function allocation exists
 	functionAllocation, exists := (*allocation)[functionName]
@@ -444,7 +449,7 @@ func DecrementInstances(allocation *SystemFunctionsAllocation, functionName stri
 	}
 		
 	// Update the value
-	newValue := nodeAllocation.Instances - 1
+	newValue := nodeAllocation.PrewarmContainers - 1
 	if newValue == 0 {
 		// Remove node from the map if it handled all the requests
 		delete(functionAllocation.NodeAllocations, nodeIp)
@@ -453,13 +458,13 @@ func DecrementInstances(allocation *SystemFunctionsAllocation, functionName stri
 		if len(functionAllocation.NodeAllocations) == 0 {
 			delete(*allocation, functionName)
 			if len(*allocation) == 0 {
-				deleteFromCache()
+				DeleteFromCache()
 				return true
 			}
 		}
 	} else if newValue > 0 {
 		// Update node allocation info
-		nodeAllocation.Instances = newValue
+		nodeAllocation.PrewarmContainers = newValue
 		functionAllocation.NodeAllocations[nodeIp] = nodeAllocation
 		(*allocation)[functionName] = functionAllocation
 	} else {

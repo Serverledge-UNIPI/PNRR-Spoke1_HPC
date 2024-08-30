@@ -77,8 +77,8 @@ const REGISTERED_FUNCTIONS = "registered.functions"
 
 const NODE_POWER_CONSUMPTION = "node.power.consumption"
 
-// Possible values: "default", "energyaware"
-const LB_TYPE = "lb"
+// Possible policy values: "default", "energyaware"
+const LOAD_BALANCING_POLICY = "lb.policy"
 
 // Specifies the time duration between successive checks of the servers
 const LB_CHECK_INTERVAL  = "lb.interval"

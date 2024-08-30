@@ -142,7 +142,6 @@ func main() {
 		err = solver.InitNodeResources()
 		if err != nil {
 			log.Fatalf("Error in initializing node resources: %v", err)
-			return
 		}
 		go solver.Init()
 

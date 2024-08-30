@@ -218,6 +218,9 @@ func NewContainerWithAcquiredResources(fun *function.Function) (container.Contai
 
 	fp := getFunctionPool(fun)
 	fp.putBusyContainer(contID) // We immediately mark it as busy
+	d := time.Duration(config.GetInt(config.CONTAINER_EXPIRATION_TIME, 600)) * time.Second
+	expTime := time.Now().Add(d).UnixNano()
+	fp.putReadyContainer(contID, expTime)
 
 	return contID, nil
 }
@@ -412,6 +415,17 @@ func PrewarmInstances(f *function.Function, count int64, forcePull bool) (int64,
 	if err != nil {
 		return 0, err
 	}
+
+	// -------------------------------
+	//functionsAllocation, found := solver.GetAllocationFromCache()
+	//if found {
+	//	nodeAllocation, _ := (*functionsAllocation)[f.Name].NodeAllocations[utils.GetIpAddress().String()]
+	//	functionCPUDemand := math.Round((nodeAllocation.ComputationalCapacity / Resources.MaximumCapacity) * 100) / 100
+	//	f.CPUDemand = functionCPUDemand
+	//} else {
+	//	log.Printf("Functions allocation not found in cache")	
+	//}
+	// -------------------------------
 
 	var spawned int64 = 0
 	for spawned < count {

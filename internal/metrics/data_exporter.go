@@ -129,7 +129,7 @@ func appendToCSVFailures(filename, timestamp string, epoch int32, data map[strin
 }
 
 // Function to append solver results to a CSV file
-func appendToCSVSolver(filename, timestamp string, epoch int32, numActiveNodes, solverFails int, systemPowerConsumption int32) error {
+func appendToCSVSolver(filename, timestamp string, epoch int32, numActiveNodes int, solverFails int, systemPowerConsumption int32) error {
 	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -140,6 +140,21 @@ func appendToCSVSolver(filename, timestamp string, epoch int32, numActiveNodes, 
 	defer writer.Flush()
 
 	record := []string{timestamp, fmt.Sprintf("%d", epoch), fmt.Sprintf("%d", numActiveNodes), fmt.Sprintf("%d", solverFails), fmt.Sprintf("%d", systemPowerConsumption)}
+	return writer.Write(record)
+}
+
+// Function to append function results to a CSV file
+func appendToCSVFunction(filename, timestamp string, epoch int32, deadlineFails int) error {
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	record := []string{timestamp, fmt.Sprintf("%d", epoch), fmt.Sprintf("%d", deadlineFails)}
 	return writer.Write(record)
 }
 
@@ -232,6 +247,16 @@ func RecordSolverMetrics(activeNodes []int32, epoch int32, solverFails int, node
 
 	filename := fmt.Sprintf("exported_data/solver_%dmin_%dfunctions.csv", config.GetInt(config.EPOCH_DURATION, 20), config.GetInt(config.REGISTERED_FUNCTIONS, 0))
 	if err := appendToCSVSolver(filename, timestamp, epoch, numActiveNodes, solverFails, systemPowerConsumption); err != nil {
+		log.Fatalf("Error writing to CSV: %v", err)
+	}
+}
+
+// Function to record function metrics
+func RecordFunctionMetrics(epoch int32, deadlineFails int) {
+	timestamp := time.Now().Format(time.RFC3339)
+
+	filename := fmt.Sprintf("exported_data/deadline_failures_%dmin_%dfunctions.csv", config.GetInt(config.EPOCH_DURATION, 20), config.GetInt(config.REGISTERED_FUNCTIONS, 0))
+	if err := appendToCSVFunction(filename, timestamp, epoch, deadlineFails); err != nil {
 		log.Fatalf("Error writing to CSV: %v", err)
 	}
 }

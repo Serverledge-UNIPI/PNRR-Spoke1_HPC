@@ -20,8 +20,8 @@ def start_edf(functions, nodes):
 
     state = True
 
-    nodes_instances = {i: [0] * len(functions) for i in range(len(nodes))}
-    functions_capacity = {i: [0] * len(nodes) for i in range(len(functions))}
+    node_instances = {i: [0] * len(functions) for i in range(len(nodes))}
+    function_capacities = {i: [0] * len(nodes) for i in range(len(functions))}
 
     # Order functions by their deadline
     functions.sort(key=lambda f: f['deadline'])
@@ -31,7 +31,7 @@ def start_edf(functions, nodes):
     
     for function in functions:
         placed_invocations = 0
-        for _ in range(0, function['invocations']):
+        for _ in range(0, function['peak_invocations']):
             placed = False
             for node in nodes:
                 function_required_capacity = function['workload'] / ((function['deadline'] / 1000) * (node['ipc']/10))
@@ -43,15 +43,15 @@ def start_edf(functions, nodes):
                         node['is_active'] = True
 
                     if function['id'] in node['hosted_functions']:
-                        node['hosted_functions'][function['id']]['invocations'] += 1
+                        node['hosted_functions'][function['id']]['peak_invocations'] += 1
                     else:
                         node['hosted_functions'][function['id']] = {
-                            'invocations': 1,
+                            'peak_invocations': 1,
                             'capacity_assigned': function_required_capacity
                         }
                     
-                    nodes_instances[node['id']][function['id']] = node['hosted_functions'][function['id']]['invocations']
-                    functions_capacity[function['id']][node['id']] = function_required_capacity
+                    node_instances[node['id']][function['id']] = node['hosted_functions'][function['id']]['peak_invocations']
+                    function_capacities[function['id']][node['id']] = function_required_capacity
                     
                     node['total_memory'] -= function['memory']
                     node['total_capacity'] -= function_required_capacity
@@ -69,15 +69,14 @@ def start_edf(functions, nodes):
         if 'hosted_functions' in node:
             for function_id, details in node['hosted_functions'].items():
                 function = next(f for f in functions if f['id'] == function_id)
-                execution_time = function['workload'] / (details['capacity_assigned'] * (node['ipc'] / 10))
-                log(f'   Function {function_id}: Instances={details["invocations"]}, Capacity={details["capacity_assigned"]:.2f} Mhz, Execution time: {execution_time:.3f} s, Deadline: {(function["deadline"]/1000):.3f} s', logging)
+                log(f'   Function {function_id}: Instances={details["peak_invocations"]}, Capacity={details["capacity_assigned"]:.2f} Mhz, Deadline: {(function["deadline"]/1000):.3f} s', logging)
         
         log(f'   Memory: {node["total_memory"]:.2f} (Mb), Capacity: {node["total_capacity"] / (10 ** 3)} (Ghz), IPC: {node["ipc"]}', logging)
         log(f'   Memory available: {node["total_memory"]} (Mb), Capacity available: {node["total_capacity"] / (10 ** 3):.2f} (Ghz)\n', logging)
 
     if not state:
-        nodes_instances = {i: [0] * len(functions) for i in range(len(nodes))}
-        functions_capacity = {i: [0] * len(nodes) for i in range(len(functions))}
+        node_instances = {i: [0] * len(functions) for i in range(len(nodes))}
+        function_capacities = {i: [0] * len(nodes) for i in range(len(functions))}
         
         for node in nodes:
             node['is_active'] = True
@@ -87,8 +86,8 @@ def start_edf(functions, nodes):
         'solver_walltime': None,
         'objective_value': sum(int(node.get('is_active', False)) * node['power_consumption'] for node in nodes),
         'active_nodes_indexes': [1 if node.get('is_active', False) else 0 for node in nodes],
-        'nodes_instances': nodes_instances,
-        'functions_capacity': functions_capacity
+        'node_instances': node_instances,
+        'function_capacities': function_capacities
     }
 
     return results

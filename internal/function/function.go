@@ -19,7 +19,7 @@ type Function struct {
 	CPUDemand       float64 // 1.0 -> 1 core
 	Workload		int64
 	Deadline		int64	// ms
-	Invocations		int64
+	PeakInvocations	int64
 	Handler         string  // example: "module.function_name"
 	TarFunctionCode string  // input is .tar
 	CustomImage     string  // used if custom runtime is chosen

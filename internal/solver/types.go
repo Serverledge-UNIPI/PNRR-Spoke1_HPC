@@ -9,10 +9,10 @@ type NodeInformation struct {
 }
 
 type FunctionInformation struct {
-	MemoryMB		[]int
-	Workload   		[]int
-	Deadline   		[]int
-	Invocations 	[]int
+	MemoryMB			[]int
+	Workload   			[]int
+	Deadline   			[]int
+	PeakInvocations 	[]int
 }
 
 type SolverResults struct {
@@ -20,14 +20,14 @@ type SolverResults struct {
 	SolverWalltime          float64             	`json:"solver_walltime"`
 	ObjectiveValue          float64             	`json:"objective_value"`
 	ActiveNodesIndexes      []int32             	`json:"active_nodes_indexes"`
-	NodesInstances          map[int][]interface{} 	`json:"nodes_instances"`
-	FunctionsCapacity       map[int][]interface{}   `json:"functions_capacity"`
+	NodeInstances			map[int][]interface{} 	`json:"node_instances"`
+	FunctionCapacities		map[int][]interface{}   `json:"function_capacities"`
 }
 
 // NodeAllocationInfo contains allocation details for a specific node
 type NodeAllocationInfo struct {
-    Instances          		int     `json:"instances"`           	// Number of instances allocated
-    ComputationalCapacity	float64 `json:"computational_capacity"` // Computation capacity to assign to the function on this node
+    PrewarmContainers  		int     `json:"prewarm_containers"`		// Number of prewarm containers to allocate
+    ComputationalCapacity	float64 `json:"computational_capacity"`	// Computation capacity to assign to the function on this node
 }
 
 // FunctionNodeAllocation maps a node address to its allocation information for a specific function

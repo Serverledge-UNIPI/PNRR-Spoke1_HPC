@@ -13,7 +13,7 @@ def log(message, logging):
         print(f'{message}')
 
 def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: list, node_capacity: list, maximum_capacity: list, node_ipc: list, node_power_consumption: list, 
-                 function_memory: list, function_workload: list, function_deadline: list, function_invocations: list) -> dict:
+                 function_memory: list, function_workload: list, function_deadline: list, function_peak_invocations: list) -> dict:
     # Retrieve CP-SAT parameters from the configuration file
     with open(CONFIG_PATH, 'r') as file:
         data = yaml.safe_load(file)
@@ -45,7 +45,7 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
 
     for j in range(number_of_functions):
         # Number of requests
-        model.add(sum(n[i, j] for i in range(number_of_nodes)) == function_invocations[j])
+        model.add(sum(n[i, j] for i in range(number_of_nodes)) == function_peak_invocations[j])
 
     # The goal is to minimize the number of active nodes
     model.minimize(sum(y[i] * node_power_consumption[i] for i in range(number_of_nodes)))
@@ -59,8 +59,8 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
         solver.parameters.max_time_in_seconds = solver_constants['max_simulation_time'] 
 
     nodes_capacity_utilization = [] # utilization per node
-    nodes_instances = {i: [0] * number_of_functions for i in range(number_of_nodes)}
-    functions_capacity = {i: [0] * number_of_nodes for i in range(number_of_functions)}
+    node_instances = {i: [0] * number_of_functions for i in range(number_of_nodes)}
+    function_capacities = {i: [0] * number_of_nodes for i in range(number_of_functions)}
     
     status = solver.solve(model)
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:    
@@ -72,15 +72,14 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
             for j in range(number_of_functions):                
                 if solver.value(n[i, j]) and solver.value(c[i, j]):
                     single_instance_capacity = solver.value(c[i, j]) / solver.value(n[i, j])
-                    execution_time = function_workload[j] / (single_instance_capacity * (node_ipc[i]/10))
                 
                     total_capacity_assigned += solver.value(c[i, j])  
                     total_memory_assigned += solver.value(n[i, j]) * function_memory[j]
 
-                    nodes_instances[i][j] = solver.value(n[i, j])
-                    functions_capacity[j][i] = single_instance_capacity
+                    node_instances[i][j] = solver.value(n[i, j])
+                    function_capacities[j][i] = single_instance_capacity
                 
-                    log(f'   Function {j + 1}: Instances={solver.value(n[i, j])}, Capacity={single_instance_capacity:.2f} Mhz, Execution time: {execution_time:.3f} s, Deadline: {(function_deadline[j]/1000):.3f} s', logging)
+                    log(f'   Function {j + 1}: Instances={solver.value(n[i, j])}, Capacity={single_instance_capacity:.2f} Mhz, Deadline: {(function_deadline[j]/1000):.3f} s', logging)
 
             log(f'   Memory: {node_memory[i]} (Mb), Capacity: {node_capacity[i]/(10 ** 3)} (Ghz), IPC: {node_ipc[i]/10}, Power consumption: {node_power_consumption[i]} (Watt)', logging)
             log(f'   Memory available: {node_memory[i] - total_memory_assigned} (Mb), Capacity available: {(node_capacity[i] - total_capacity_assigned)/(10 ** 3)} (Ghz)\n', logging)
@@ -100,8 +99,8 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
         'solver_walltime': solver.WallTime(),
         'objective_value': objective_value,
         'active_nodes_indexes': active_nodes,
-        'nodes_instances': nodes_instances,
-        'functions_capacity': functions_capacity
+        'node_instances': node_instances,
+        'function_capacities': function_capacities
     }
 
     return results

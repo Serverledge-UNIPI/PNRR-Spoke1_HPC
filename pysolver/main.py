@@ -19,10 +19,10 @@ def solve():
         function_memory = data['function_memory']
         function_workload = data['function_workload']
         function_deadline = data['function_deadline']
-        function_invocations = data['function_invocations']
+        function_peak_invocations = data['function_peak_invocations']
         
         results = start_solver(number_of_nodes, number_of_functions, node_memory, node_capacity, maximum_capacity, node_ipc, node_power_consumption,
-            function_memory, function_workload, function_deadline, function_invocations)
+            function_memory, function_workload, function_deadline, function_peak_invocations)
         
         return jsonify(results)
     except Exception as e:
@@ -42,7 +42,7 @@ def solve_edf():
         function_memory = data['function_memory']
         function_workload = data['function_workload']
         function_deadline = data['function_deadline']
-        function_invocations = data['function_invocations']
+        function_peak_invocations = data['function_peak_invocations']
         
         nodes = [
             {
@@ -61,7 +61,7 @@ def solve_edf():
                 'memory': function_memory[i],
                 'workload': function_workload[i],
                 'deadline': function_deadline[i],
-                'invocations': function_invocations[i]
+                'peak_invocations': function_peak_invocations[i]
             } for i in range(number_of_functions)
         ]
         

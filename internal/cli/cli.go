@@ -63,7 +63,7 @@ var statusCmd = &cobra.Command{
 
 var funcName, runtime, handler, customImage, src, qosClass string
 var requestId string
-var memory, workload, invocations, deadline int64
+var memory, workload, peakInvocations, deadline int64
 var cpuDemand, qosMaxRespT float64
 var params []string
 var paramsFile string
@@ -92,7 +92,7 @@ func Init() {
 	createCmd.Flags().Int64VarP(&memory, "memory", "", 128, "memory (in MB) for the function")
 	createCmd.Flags().Int64VarP(&workload, "workload", "", 0, "workload for the function") // TODO: default value
 	createCmd.Flags().Int64VarP(&deadline, "deadline", "", 0, "deadline (in ms) for the function") // TODO: default value
-	createCmd.Flags().Int64VarP(&invocations, "invocations", "", 0, "expected number of invocations for the function")
+	createCmd.Flags().Int64VarP(&peakInvocations, "peak_invocations", "", 0, "maximum peak of invocations in the next epoch")
 	createCmd.Flags().Float64VarP(&cpuDemand, "cpu", "", 0.0, "estimated CPU demand for the function (1.0 = 1 core)")
 	createCmd.Flags().StringVarP(&src, "src", "", "", "source for the function (single file, directory or TAR archive) (not necessary for runtime==custom)")
 	createCmd.Flags().StringVarP(&customImage, "custom_image", "", "", "custom container image (only if runtime == 'custom')")
@@ -218,7 +218,7 @@ func create(cmd *cobra.Command, args []string) {
 		CustomImage: customImage,
 		Workload: workload,
 		Deadline: deadline,
-		Invocations: invocations,
+		PeakInvocations: peakInvocations,
 	}
 	requestBody, err := json.Marshal(request)
 	if err != nil {
