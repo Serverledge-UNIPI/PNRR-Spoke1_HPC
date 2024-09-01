@@ -12,6 +12,9 @@ import (
 	"github.com/grussorusso/serverledge/internal/config"
 	"github.com/grussorusso/serverledge/utils"
 
+    "time"
+    "github.com/grussorusso/serverledge/internal/cache"
+
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/net/context"
 )
@@ -51,9 +54,9 @@ func handlePutEvent(event *clientv3.Event) {
         return
     }
 
-    // Update local cache
-    allocation.SaveToCache()
-    log.Printf("Updated cache with new allocation: %v", allocation)
+    // Store allocation to the local cache
+    epochDuration := time.Duration(config.GetInt(config.EPOCH_DURATION, 30))
+    cache.GetCacheInstance().Set("allocation", allocation, epochDuration * time.Second)
 
     // Process the allocation and send prewarming requests
     processAllocation(allocation)
@@ -112,7 +115,7 @@ func sendPrewarmRequest(functionName string, nodeUrl string, nodeAllocation solv
     }
 
     prewarmUrl := fmt.Sprintf("%s/prewarm", nodeUrl)
-    log.Printf("Sending prewarm to %s for %v instances (function %s)", prewarmUrl, nodeAllocation.PrewarmContainers, functionName)
+    log.Printf("[%s] Sending prewarm to %s for %v instances", functionName, prewarmUrl, nodeAllocation.PrewarmContainers)
     resp, err := utils.PostJson(prewarmUrl, prewarmingBody)
     if err != nil {
         log.Printf("Prewarming failed: %v", err)
@@ -123,9 +126,9 @@ func sendPrewarmRequest(functionName string, nodeUrl string, nodeAllocation solv
 
 func handleDeleteEvent() {
     log.Println("Etcd Event Type: DELETE")
-
-    // Delete allocation from the local cache
-    solver.DeleteFromCache()
+    
+    // Delete allocation from local cache
+    cache.GetCacheInstance().Delete("allocation")
 
     // Clear proxy map
     for proxyIdentifier := range proxyMap {
@@ -213,12 +216,12 @@ func (proxyMap FunctionProxyMap) updateProxy(proxyIdentifier string, newTargets 
 	log.Printf("Updating lb proxy with identifier '%s'", proxyIdentifier)
 	lbProxy := proxyMap[proxyIdentifier]
 
-	log.Printf("Previous targets: %v", lbProxy.getTargets())
+	//log.Printf("Previous targets: %v", lbProxy.getTargets())
 	lbProxy.setTargets(newTargets)
-	log.Printf("Targets updated: %v", lbProxy.getTargets())
+	//log.Printf("Targets updated: %v", lbProxy.getTargets())
 
 	if weightedProxy, ok := lbProxy.(*LBWeightedProxy); ok {
-		log.Printf("Previous weights: %v", weightedProxy.weights)
+		//log.Printf("Previous weights: %v", weightedProxy.weights)
 		
 		totalWeight := 0
 		for _, value := range newWeights {
@@ -228,8 +231,8 @@ func (proxyMap FunctionProxyMap) updateProxy(proxyIdentifier string, newTargets 
 		weightedProxy.weights = newWeights
 		weightedProxy.totalWeight = totalWeight
 
-		log.Printf("Weights updated: %v", weightedProxy.weights)
-		log.Printf("Total weight updated: %d", weightedProxy.totalWeight)
+		//log.Printf("Weights updated: %v", weightedProxy.weights)
+		//log.Printf("Total weight updated: %d", weightedProxy.totalWeight)
 	}
 }
 

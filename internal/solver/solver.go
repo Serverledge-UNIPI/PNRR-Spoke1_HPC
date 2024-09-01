@@ -96,14 +96,14 @@ func handlePutEvent(event *clientv3.Event) {
 	}
 
 	// Update local cache
-	allocation.SaveToCache()
+	allocation.saveToCache()
 	log.Printf("Updated cache with new allocation: %v", allocation)
 }
 
 func handleDeleteEvent() {
 	log.Println("Etcd Event Type: DELETE")
 	// Delete allocation from the local cache
-	DeleteFromCache()
+	deleteFromCache()
 }
 
 func solve() {
@@ -221,7 +221,7 @@ func solve() {
 		}
 
 		// Save the new allocation to the local cache
-		functionsAllocation.SaveToCache()
+		functionsAllocation.saveToCache()
 	}
 
 	if metrics.Enabled {
@@ -352,11 +352,11 @@ func InitNodeResources() error {
 	return nil
 }
 
-func (functionsAllocation *SystemFunctionsAllocation) SaveToCache () {
+func (functionsAllocation *SystemFunctionsAllocation) saveToCache () {
 	cache.GetCacheInstance().Set("allocation", functionsAllocation, getEpochDuration())
 }
 
-func DeleteFromCache () {
+func deleteFromCache () {
 	cache.GetCacheInstance().Delete("allocation")
 }
 
