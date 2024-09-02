@@ -37,3 +37,9 @@ type FunctionNodeAllocation struct {
 
 // SystemFunctionsAllocation maps a function name to its allocation across different nodes
 type SystemFunctionsAllocation map[string]FunctionNodeAllocation
+
+// Struct used to simulate peak invocations prediction
+type FunctionPeakInvocations struct {
+	Name      				string `json:"name"`
+	EpochPeakInvocations	[]int  `json:"epoch_peak_invocations"`
+}

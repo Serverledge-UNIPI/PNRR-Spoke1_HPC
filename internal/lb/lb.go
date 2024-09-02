@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 	"strings"
+	"sync"
 	"os"
 	"os/signal"
 	"io/ioutil"
@@ -15,8 +16,7 @@ import (
 	"github.com/grussorusso/serverledge/internal/config"
 	"github.com/grussorusso/serverledge/internal/function"
 	"github.com/grussorusso/serverledge/internal/registration"
-
-	"github.com/grussorusso/serverledge/internal/cache"
+	"github.com/grussorusso/serverledge/internal/solver"
 	
 	"github.com/labstack/echo/v4"
 	"context"
@@ -24,6 +24,11 @@ import (
 
 // proxyMap can contain both proxies associated with specific functions and default proxies
 var proxyMap FunctionProxyMap
+
+var (
+    localAllocation solver.SystemFunctionsAllocation
+    mu sync.Mutex
+)
 
 func registerTerminationHandler(r *registration.Registry, e *echo.Echo) {
 	c := make(chan os.Signal)
@@ -51,22 +56,6 @@ func registerTerminationHandler(r *registration.Registry, e *echo.Echo) {
 	}()
 }
 
-func cacheSetup() {
-	// Setup cache size
-	cache.Size = config.GetInt(config.CACHE_SIZE, 10)
-
-	// Setup cleanup interval
-	interval := time.Duration(config.GetInt(config.CACHE_CLEANUP, 3600))
-	cache.CleanupInterval = interval * time.Second
-
-	// Setup default expiration time
-	expirationInterval := time.Duration(config.GetInt(config.CACHE_ITEM_EXPIRATION, 60))
-	cache.DefaultExp = expirationInterval * time.Second
-
-	// Cache first creation
-	cache.GetCacheInstance()
-}
-
 func handleRequest(c echo.Context) error {
     var proxyIdentifier string
     
@@ -76,16 +65,17 @@ func handleRequest(c echo.Context) error {
     // Check if the URI starts with "/invoke/"
     if strings.HasPrefix(requestURI, "/invoke/") {
 		// Check if allocation is in the local cache
-		_, found := cache.GetCacheInstance().Get("allocation")
-		if found {
-			// Extract the function name by removing the "/invoke/" prefix
+		mu.Lock()
+        if localAllocation != nil {
+            // Extract the function name by removing the "/invoke/" prefix
             proxyIdentifier = strings.TrimPrefix(requestURI, "/invoke/")
-			log.Printf("FOUND ALLOCATION")
+			log.Printf("Allocation found")
         } else {
             // Use default edge nodes if allocation is not found
             proxyIdentifier = "edge"
-			log.Printf("NOT FOUND ALLOCATION")
+			log.Printf("Allocation not found")
         }
+		mu.Unlock()
     } else {
         // Use default cloud nodes if the request is not an invoke one
         proxyIdentifier = "cloud"
@@ -150,8 +140,6 @@ func handleRequest(c echo.Context) error {
 // StartReverseProxy initializes and starts a reverse proxy server with load balancing capabilities
 func StartReverseProxy(r *registration.Registry, region string) {
 	registry := &registration.Registry{Area: region}
-
-	cacheSetup()
 
 	proxyMap = newFunctionProxyMap()
 	if err := updateDefaultCloudTargets(region); err != nil {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 	"bytes"
+	"os"
+	"sync"
 	"encoding/json"
 	"net/http"
 
@@ -12,7 +14,6 @@ import (
 	"github.com/grussorusso/serverledge/internal/registration"
 	"github.com/grussorusso/serverledge/internal/node"
 	"github.com/grussorusso/serverledge/internal/function"
-	"github.com/grussorusso/serverledge/internal/cache"
 	"github.com/grussorusso/serverledge/internal/metrics"
 	"github.com/grussorusso/serverledge/utils"
 
@@ -24,86 +25,67 @@ import (
 )
 
 var epoch int32
+var (
+	functionsPeakInvocationsMap map[string][]int // contains peak invocations read from a json file (should be predicted)
+	mu sync.Mutex
+)
 
 func getEpochDuration() time.Duration {
 	epochDuration := config.GetInt(config.EPOCH_DURATION, 20)
 	return time.Duration(epochDuration) * time.Second // TODO: fix to time.Minute
 }
 
-func Init() {
-	isSolverNode := config.GetBool(config.IS_SOLVER_NODE, false)
-	if isSolverNode {
-		epoch = 0
-		solverTicker := time.NewTicker(getEpochDuration())
-		defer solverTicker.Stop()
+func createMapPeakInvocations() {
+	mu.Lock()
+	defer mu.Unlock()
 
-		// Attempt to connect data exporter to Prometheus
-		if metrics.Enabled {
-			if err := metrics.ConnectToPrometheus(); !err {
-				log.Printf("Failed to connect to Prometheus: %v", err)
-			}
-		}
-
-		// TODO: remove
-		time.Sleep(10 * time.Second)
-		solve()
-
-		for {
-			select {
-			case <-solverTicker.C:
-				solve()
-			}
-		}
-	} else {
-		watchFunctionsAllocation()
-	}
-}
-
-func watchFunctionsAllocation() {
-    log.Println("Running functions allocation watcher")
-
-    etcdClient, err := utils.GetEtcdClient()
-    if err != nil {
-        log.Fatalf("Error getting etcd client: %v", err)
-    }
-
-    watchChan := etcdClient.Watch(context.Background(), "allocation")
-    for watchResp := range watchChan {
-        for _, event := range watchResp.Events {
-            switch event.Type {
-            case clientv3.EventTypePut:
-                handlePutEvent(event)
-
-            case clientv3.EventTypeDelete:
-                handleDeleteEvent()
-
-            default:
-                log.Printf("Unhandled event type: %v", event.Type)
-            }
-        }
-    }
-}
-
-func handlePutEvent(event *clientv3.Event) {
-    log.Println("Etcd Event Type: PUT")
-
-	// Deserialize JSON to obtain the SystemFunctionsAllocation struct
-	var allocation SystemFunctionsAllocation
-	err := json.Unmarshal(event.Kv.Value, &allocation)
+	data, err := os.ReadFile("functions_data.json")
 	if err != nil {
-		log.Printf("Error unmarshalling allocation: %v", err)
-		return
+		fmt.Println("Error while reading functions data file: ", err)
 	}
 
-	// Update local cache
-	allocation.saveToCache()
-	log.Printf("Updated cache with new allocation: %v", allocation)
+	var functionsPeakInvocations []FunctionPeakInvocations
+	err = json.Unmarshal([]byte(data), &functionsPeakInvocations)
+	if err != nil {
+		fmt.Println("Error while decoding JSON: ", err)
+	}
+
+	// Map creation with function name as key and peak invocations list as value
+	functionsPeakInvocationsMap = make(map[string][]int)
+	for _, function := range functionsPeakInvocations {
+		functionsPeakInvocationsMap[function.Name] = function.EpochPeakInvocations
+	}
+
+	if len(functionsPeakInvocationsMap) == 0 {
+		log.Fatalf("Error: peak invocations simulation map is empty")
+	}
 }
 
-func handleDeleteEvent() {
-	log.Println("Etcd Event Type: DELETE")
-	// Delete allocation from the local cache
-	deleteFromCache()
+func Init() {
+	epoch = 0
+	solverTicker := time.NewTicker(getEpochDuration())
+	defer solverTicker.Stop()
+
+	// Attempt to connect data exporter to Prometheus
+	if metrics.Enabled {
+		if err := metrics.ConnectToPrometheus(); !err {
+			log.Printf("Failed to connect to Prometheus: %v", err)
+		}
+	}
+
+	// Peak invocations prediction
+	createMapPeakInvocations()
+
+	// TODO: remove
+	time.Sleep(10 * time.Second)
+	solve()
+
+	for {
+		select {
+		case <-solverTicker.C:
+			solve()
+		}
+	}
 }
 
 func solve() {
@@ -144,7 +126,6 @@ func solve() {
 		log.Printf("Function Memory (MB): %v\n", f.MemoryMB)
 		log.Printf("Workload: %v\n", f.Workload)
 		log.Printf("Deadline (ms): %v\n", f.Deadline)
-		log.Printf("Peak Invocations: %v\n", f.PeakInvocations)
 		log.Println("-----------------------------")
 	}
 
@@ -219,9 +200,6 @@ func solve() {
 		if err := functionsAllocation.saveToEtcd(); err != nil {
 			log.Fatalf("Error saving functions allocation to Etcd: %v", err)
 		}
-
-		// Save the new allocation to the local cache
-		functionsAllocation.saveToCache()
 	}
 
 	if metrics.Enabled {
@@ -234,9 +212,9 @@ func solve() {
 
 		// Save solver metrics through data exporter
 		metrics.SaveMetrics(epoch)
-		epoch++
 	}
 	
+	epoch++
 	log.Println("Solver terminated")
 }
 
@@ -275,6 +253,9 @@ func prepareNodeInfo(serversMap map[string]*registration.StatusInformation) (Nod
 }
 
 func prepareFunctionInfo(functions []string) FunctionInformation {
+	mu.Lock()
+	defer mu.Unlock()
+
 	functionInfo := FunctionInformation{
 		MemoryMB:			make([]int, len(functions)),
 		Workload:			make([]int, len(functions)),
@@ -292,7 +273,7 @@ func prepareFunctionInfo(functions []string) FunctionInformation {
 		functionInfo.MemoryMB[i] = int(f.MemoryMB)
 		functionInfo.Workload[i] = int(f.Workload / 1e6)
 		functionInfo.Deadline[i] = int(f.Deadline)
-		functionInfo.PeakInvocations[i] = int(f.PeakInvocations)
+		functionInfo.PeakInvocations[i] = int(functionsPeakInvocationsMap[functionName][epoch])
 	}
 
 	return functionInfo
@@ -350,33 +331,6 @@ func InitNodeResources() error {
 	node.Resources.TotalMemoryMB = int64(vMemInfo.Total / 1e6)
 
 	return nil
-}
-
-func (functionsAllocation *SystemFunctionsAllocation) saveToCache () {
-	cache.GetCacheInstance().Set("allocation", functionsAllocation, getEpochDuration())
-}
-
-func deleteFromCache () {
-	cache.GetCacheInstance().Delete("allocation")
-}
-
-func GetAllocationFromCache() (*SystemFunctionsAllocation, bool) {
-	systemFunctionsAllocation, found := cache.GetCacheInstance().Get("allocation")
-	if !found {
-		// Cache miss
-		return &SystemFunctionsAllocation{}, false
-	}
-
-	// Cache hit
-	functionsAllocation, ok := systemFunctionsAllocation.(*SystemFunctionsAllocation)
-	if !ok {
-		// Type assertion failed
-		log.Println("Type assertion failed: expected *SystemFunctionsAllocation")
-		return &SystemFunctionsAllocation{}, false
-	}
-
-	functionsAllocationCopy := *functionsAllocation
-	return &functionsAllocationCopy, true
 }
 
 func (functionsAllocation *SystemFunctionsAllocation) saveToEtcd() error {

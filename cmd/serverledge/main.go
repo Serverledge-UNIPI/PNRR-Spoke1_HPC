@@ -143,7 +143,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error in initializing node resources: %v", err)
 		}
-		go solver.Init()
+		
+		isSolverNode := config.GetBool(config.IS_SOLVER_NODE, false)
+		if isSolverNode {
+			go solver.Init()
+		}
 
 		err = registration.InitEdgeMonitoring(registry)
 		if err != nil {

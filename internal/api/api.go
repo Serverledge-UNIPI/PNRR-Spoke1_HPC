@@ -19,7 +19,6 @@ import (
 	"github.com/grussorusso/serverledge/internal/node"
 	"github.com/grussorusso/serverledge/internal/registration"
 	"github.com/grussorusso/serverledge/utils"
-	"github.com/grussorusso/serverledge/internal/solver"
 	"github.com/grussorusso/serverledge/internal/scheduling"
 	"github.com/labstack/echo/v4"
 )
@@ -229,14 +228,8 @@ func PrewarmFunction(c echo.Context) error {
 		return c.String(http.StatusNotFound, "Function unknown")
 	}
 
-	// Force the CPU demand specified in the allocation
-	functionsAllocation, found := solver.GetAllocationFromCache()
-	if found {
-		hostport := fmt.Sprintf("http://%s:%d", utils.GetIpAddress().String(), config.GetInt(config.API_PORT, 1323))
-		nodeAllocation, _ := (*functionsAllocation)[fun.Name].NodeAllocations[hostport]
-		fun.CPUDemand = math.Round((nodeAllocation.ComputationalCapacity / node.Resources.MaximumCapacity) * 100) / 100
-		log.Printf("Forced CPU demand for function '%s' to %v", fun.Name, fun.CPUDemand)
-	}
+	// Force the CPU demand specified by the solver
+	fun.CPUDemand = math.Round((req.CPUDemand / node.Resources.MaximumCapacity) * 100) / 100
 
 	count, err := node.PrewarmInstances(fun, req.Instances, req.ForceImagePull)
 

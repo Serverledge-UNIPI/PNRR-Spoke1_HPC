@@ -11,6 +11,7 @@ type InvocationRequest struct {
 
 type PrewarmingRequest struct {
 	Function       string
+	CPUDemand	   float64
 	Instances      int64
 	ForceImagePull bool
 }

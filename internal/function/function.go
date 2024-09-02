@@ -17,9 +17,8 @@ type Function struct {
 	Runtime         string  // example: python310
 	MemoryMB        int64   // MB
 	CPUDemand       float64 // 1.0 -> 1 core
-	Workload		int64
+	Workload		int64	// average number of instructions executed by the reference node
 	Deadline		int64	// ms
-	PeakInvocations	int64
 	Handler         string  // example: "module.function_name"
 	TarFunctionCode string  // input is .tar
 	CustomImage     string  // used if custom runtime is chosen

@@ -12,9 +12,6 @@ import (
 	"github.com/grussorusso/serverledge/internal/config"
 	"github.com/grussorusso/serverledge/utils"
 
-    "time"
-    "github.com/grussorusso/serverledge/internal/cache"
-
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/net/context"
 )
@@ -54,9 +51,11 @@ func handlePutEvent(event *clientv3.Event) {
         return
     }
 
-    // Store allocation to the local cache
-    epochDuration := time.Duration(config.GetInt(config.EPOCH_DURATION, 30))
-    cache.GetCacheInstance().Set("allocation", allocation, epochDuration * time.Second)
+    // Update local allocation
+    mu.Lock()
+    localAllocation = allocation
+    log.Printf("Updated local allocation with: %v", localAllocation)
+    mu.Unlock()
 
     // Process the allocation and send prewarming requests
     processAllocation(allocation)
@@ -105,6 +104,7 @@ func processAllocation(allocation solver.SystemFunctionsAllocation) {
 func sendPrewarmRequest(functionName string, nodeUrl string, nodeAllocation solver.NodeAllocationInfo) {
     request := client.PrewarmingRequest{
         Function:       functionName,
+        CPUDemand:      nodeAllocation.ComputationalCapacity,
         Instances:      int64(nodeAllocation.PrewarmContainers),
         ForceImagePull: true,
     }
@@ -127,8 +127,10 @@ func sendPrewarmRequest(functionName string, nodeUrl string, nodeAllocation solv
 func handleDeleteEvent() {
     log.Println("Etcd Event Type: DELETE")
     
-    // Delete allocation from local cache
-    cache.GetCacheInstance().Delete("allocation")
+    // Delete local allocation
+    mu.Lock()
+    localAllocation = nil
+    mu.Unlock()
 
     // Clear proxy map
     for proxyIdentifier := range proxyMap {
