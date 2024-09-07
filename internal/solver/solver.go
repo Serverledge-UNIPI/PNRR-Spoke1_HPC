@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"sync"
+	"syscall"
 	"encoding/json"
 	"net/http"
 
@@ -18,7 +19,6 @@ import (
 	"github.com/grussorusso/serverledge/utils"
 
 	"github.com/shirou/gopsutil/cpu"
-	"github.com/shirou/gopsutil/mem"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/net/context"
@@ -31,15 +31,15 @@ var (
 )
 
 func getEpochDuration() time.Duration {
-	epochDuration := config.GetInt(config.EPOCH_DURATION, 20)
-	return time.Duration(epochDuration) * time.Second // TODO: fix to time.Minute
+	epochDuration := config.GetInt(config.EPOCH_DURATION, 15)
+	return time.Duration(epochDuration) * time.Minute
 }
 
 func createMapPeakInvocations() {
 	mu.Lock()
 	defer mu.Unlock()
 
-	data, err := os.ReadFile("functions_data.json")
+	data, err := os.ReadFile("solver_inputs.json")
 	if err != nil {
 		fmt.Println("Error while reading functions data file: ", err)
 	}
@@ -208,7 +208,6 @@ func solve() {
 			solverFails = 1
 		}
 		metrics.RecordSolverMetrics(results.ActiveNodesIndexes, epoch, solverFails, nodeInfo.PowerConsumption)
-		metrics.ResetCurrentFailures()
 
 		// Save solver metrics through data exporter
 		metrics.SaveMetrics(epoch)
@@ -318,17 +317,21 @@ func InitNodeResources() error {
 		return err
 	}
 
-	vMemInfo, err := mem.VirtualMemory()
-	if err != nil {
-		log.Fatal(err)
-		return err
-	}
+	var mem syscall.Sysinfo_t
+    err = syscall.Sysinfo(&mem)
+    if err != nil {
+        fmt.Println("Error:", err)
+        return err
+    }
+
+    totalMemory := mem.Totalram * uint64(mem.Unit)
+    totalMemoryMB := totalMemory / (1024 * 1024)
 
 	node.Resources.ComputationalCapacity = cpuInfo[0].Mhz * float64(len(cpuInfo))
 	node.Resources.MaximumCapacity = cpuInfo[0].Mhz
-	node.Resources.IPC = 1 // TODO
+	node.Resources.IPC = float32(config.GetFloat(config.NODE_IPC, 0))
 	node.Resources.PowerConsumption = int32(config.GetInt(config.NODE_POWER_CONSUMPTION, 0))
-	node.Resources.TotalMemoryMB = int64(vMemInfo.Total / 1e6)
+	node.Resources.TotalMemoryMB = int64(totalMemoryMB)
 
 	return nil
 }
@@ -346,7 +349,7 @@ func (functionsAllocation *SystemFunctionsAllocation) saveToEtcd() error {
 	}
 
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	resp, err := etcdClient.Grant(ctx, int64(getEpochDuration() / time.Second)) // TODO: fix to time.Minute
+	resp, err := etcdClient.Grant(ctx, int64(config.GetInt(config.EPOCH_DURATION, 15) * 60))
 	if err != nil {
 		log.Fatal(err)
 		return err

@@ -1,6 +1,6 @@
 constants:
   solver:
-    console_logging: False
-    max_simulation_time: 600
+    console_logging: True
+    max_simulation_time: 300
     search_workers: 4
     log_search_progress: False

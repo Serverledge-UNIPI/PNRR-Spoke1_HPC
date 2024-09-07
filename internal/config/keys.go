@@ -76,6 +76,7 @@ const EPOCH_DURATION = "epoch.duration"
 const REGISTERED_FUNCTIONS = "registered.functions" 
 
 const NODE_POWER_CONSUMPTION = "node.power.consumption"
+const NODE_IPC = "node.ipc"
 
 // Possible policy values: "default", "energyaware"
 const LOAD_BALANCING_POLICY = "lb.policy"

@@ -1,7 +1,11 @@
 def handler(params, context):
-    n = params["n"]
-    return ''.join(fibonacci_nums(int(n)))
-
+    try:
+        n = int(params["n"])
+        print(f"Checking n = {n}")
+        result = ''.join(fibonacci_nums(n))
+        return {"Sequence": result}
+    except:
+        return {}
 
 def fibonacci_nums(n):
     sequence = ""

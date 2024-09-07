@@ -12,7 +12,7 @@ def log(message, logging):
     if logging:
         print(f'{message}')
 
-def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: list, node_capacity: list, maximum_capacity: list, node_ipc: list, node_power_consumption: list, 
+def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: list, node_capacity: list, node_ipc: list, node_power_consumption: list, 
                  function_memory: list, function_workload: list, function_deadline: list, function_peak_invocations: list) -> dict:
     # Retrieve CP-SAT parameters from the configuration file
     with open(CONFIG_PATH, 'r') as file:
@@ -25,10 +25,9 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
     model = cp_model.CpModel()
 
     # Create decision variables
-    max_n = 10000
     y = {i: model.new_bool_var(f'y_{i}') for i in range(number_of_nodes)}
-    c = {(i, j): model.new_int_var(0, max_n * maximum_capacity[i], f'c_{i}_{j}') for i in range(number_of_nodes) for j in range(number_of_functions)}
-    n = {(i, j): model.new_int_var(0, max_n, f'n_{i}_{j}') for i in range(number_of_nodes) for j in range(number_of_functions)}
+    c = {(i, j): model.new_int_var(0, node_capacity[i], f'c_{i}_{j}') for i in range(number_of_nodes) for j in range(number_of_functions)}
+    n = {(i, j): model.new_int_var(0, function_peak_invocations[j], f'n_{i}_{j}') for i in range(number_of_nodes) for j in range(number_of_functions)}
 
     # Define constraints
     for i in range(number_of_nodes):
@@ -78,7 +77,7 @@ def start_solver(number_of_nodes: int, number_of_functions: int, node_memory: li
 
                     node_instances[i][j] = solver.value(n[i, j])
                     function_capacities[j][i] = single_instance_capacity
-                
+
                     log(f'   Function {j + 1}: Instances={solver.value(n[i, j])}, Capacity={single_instance_capacity:.2f} Mhz, Deadline: {(function_deadline[j]/1000):.3f} s', logging)
 
             log(f'   Memory: {node_memory[i]} (Mb), Capacity: {node_capacity[i]/(10 ** 3)} (Ghz), IPC: {node_ipc[i]/10}, Power consumption: {node_power_consumption[i]} (Watt)', logging)

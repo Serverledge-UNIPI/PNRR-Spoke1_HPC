@@ -16,6 +16,8 @@ import (
 	"golang.org/x/net/context"
 )
 
+var epoch = -1
+
 func watchFunctionsAllocation() {
     log.Println("Running functions allocation watcher")
 
@@ -57,8 +59,26 @@ func handlePutEvent(event *clientv3.Event) {
     log.Printf("Updated local allocation with: %v", localAllocation)
     mu.Unlock()
 
+    epoch++
+
     // Process the allocation and send prewarming requests
     processAllocation(allocation)
+}
+
+func handleDeleteEvent() {
+    log.Println("Etcd Event Type: DELETE")
+    
+    // Delete local allocation
+    mu.Lock()
+    localAllocation = nil
+    mu.Unlock()
+
+    // Clear proxy map
+    for proxyIdentifier := range proxyMap {
+        if proxyIdentifier != "edge" && proxyIdentifier != "cloud" {
+            proxyMap.deleteProxy(proxyIdentifier)
+        }
+    }
 }
 
 func processAllocation(allocation solver.SystemFunctionsAllocation) {
@@ -118,26 +138,10 @@ func sendPrewarmRequest(functionName string, nodeUrl string, nodeAllocation solv
     log.Printf("[%s] Sending prewarm to %s for %v instances", functionName, prewarmUrl, nodeAllocation.PrewarmContainers)
     resp, err := utils.PostJson(prewarmUrl, prewarmingBody)
     if err != nil {
-        log.Printf("Prewarming failed: %v", err)
+        log.Printf("[%s] Prewarming failed: %v", functionName, err)
         return
     }
     utils.PrintJsonResponse(resp.Body)
-}
-
-func handleDeleteEvent() {
-    log.Println("Etcd Event Type: DELETE")
-    
-    // Delete local allocation
-    mu.Lock()
-    localAllocation = nil
-    mu.Unlock()
-
-    // Clear proxy map
-    for proxyIdentifier := range proxyMap {
-        if proxyIdentifier != "edge" && proxyIdentifier != "cloud" {
-            proxyMap.deleteProxy(proxyIdentifier)
-        }
-    }
 }
 
 // getLBPolicy selects and returns a load balancing policy based on the policy type and proxy

@@ -75,18 +75,6 @@ var (
 	)
 )
 
-// Function metrics
-var (
-	DeadlineFailures = prometheus.NewGaugeVec(
-	prometheus.GaugeOpts{
-		Name: "sedge_deadline_failures",
-		Help: "The total number of function deadline failures",
-	}, 
-	[]string{"function"},
-	)
-	currentFailures = make(map[string]float64)
-)
-
 var durationBuckets = []float64{0.002, 0.005, 0.010, 0.02, 0.03, 0.05, 0.1, 0.15, 0.3, 0.6, 1.0}
 
 func AddCompletedInvocation(funcName string) {
@@ -101,28 +89,12 @@ func AddNodeUsage(cpuUsage float64, memUsage float64) {
 	MemoryUsage.WithLabelValues(nodeIdentifier).Set(memUsage)
 }
 
-func AddDeadlineFailures(functionName string, deadline float64, executionTime float64) {
-	if deadline < executionTime {
-		currentFailures[functionName]++
-	}
-    DeadlineFailures.WithLabelValues(functionName).Set(currentFailures[functionName])
-}
-
-func ResetCurrentFailures() {
-    for functionName := range currentFailures {
-        currentFailures[functionName] = 0
-        DeadlineFailures.WithLabelValues(functionName).Set(0)
-    }
-}
-
 func registerGlobalMetrics() {
 	registry.MustRegister(CompletedInvocations)
 	registry.MustRegister(ExecutionTimes)
 
 	registry.MustRegister(CpuUsage)
 	registry.MustRegister(MemoryUsage)
-
-	registry.MustRegister(DeadlineFailures)
 }
 
 func RecordNodeMetrics() {

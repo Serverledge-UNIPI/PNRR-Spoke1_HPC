@@ -218,7 +218,9 @@ func NewContainerWithAcquiredResources(fun *function.Function) (container.Contai
 
 	fp := getFunctionPool(fun)
 	fp.putBusyContainer(contID) // We immediately mark it as busy
-	// TODO
+	
+	// TODO: temporary fix
+	releaseResources(fun.CPUDemand, fun.MemoryMB)
 	d := time.Duration(config.GetInt(config.CONTAINER_EXPIRATION_TIME, 600)) * time.Second
 	expTime := time.Now().Add(d).UnixNano()
 	fp.putReadyContainer(contID, expTime)

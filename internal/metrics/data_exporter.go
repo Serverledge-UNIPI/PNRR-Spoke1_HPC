@@ -93,7 +93,7 @@ func calculateAveragePerNode(data model.Value) map[string]float64 {
 }
 
 // Function to append data to a CSV file for CPU and memory usage
-func appendToCSV(filename, timestamp string, epoch int32, cpuAvg, memAvg float64) error {
+func appendToCSVUsage(filename, timestamp string, epoch int32, cpuAvg, memAvg float64) error {
 	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -103,29 +103,16 @@ func appendToCSV(filename, timestamp string, epoch int32, cpuAvg, memAvg float64
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	record := []string{timestamp, fmt.Sprintf("%d", epoch), fmt.Sprintf("%f", cpuAvg), fmt.Sprintf("%f", memAvg)}
-	return writer.Write(record)
-}
-
-// Function to append failure deadline data to a CSV file
-func appendToCSVFailures(filename, timestamp string, epoch int32, data map[string]float64) error {
-	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-
-	for functionName, value := range data {
-		record := []string{timestamp, functionName, fmt.Sprintf("%d", epoch), fmt.Sprintf("%f", value)}
-		if err := writer.Write(record); err != nil {
+	fileInfo, err := file.Stat()
+	if fileInfo.Size() == 0 {
+		header := []string{"Timestamp", "Epoch", "AverageCpuUsage", "AverageMemUsage"}
+		if err := writer.Write(header); err != nil {
 			return err
 		}
 	}
 
-	return nil
+	record := []string{timestamp, fmt.Sprintf("%d", epoch), fmt.Sprintf("%f", cpuAvg), fmt.Sprintf("%f", memAvg)}
+	return writer.Write(record)
 }
 
 // Function to append solver results to a CSV file
@@ -139,12 +126,20 @@ func appendToCSVSolver(filename, timestamp string, epoch int32, numActiveNodes i
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
+	fileInfo, err := file.Stat()
+	if fileInfo.Size() == 0 {
+		header := []string{"Timestamp", "Epoch", "ActiveNodes", "SolverFails", "SystemPowerConsumption"}
+		if err := writer.Write(header); err != nil {
+			return err
+		}
+	}
+
 	record := []string{timestamp, fmt.Sprintf("%d", epoch), fmt.Sprintf("%d", numActiveNodes), fmt.Sprintf("%d", solverFails), fmt.Sprintf("%d", systemPowerConsumption)}
 	return writer.Write(record)
 }
 
 // Function to append function results to a CSV file
-func appendToCSVFunction(filename, timestamp string, epoch int32, deadlineFails int) error {
+func appendToCSVFunction(filename, timestamp string, epoch int, functionName string, executionTime float64, failed int) error {
 	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -154,13 +149,21 @@ func appendToCSVFunction(filename, timestamp string, epoch int32, deadlineFails 
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	record := []string{timestamp, fmt.Sprintf("%d", epoch), fmt.Sprintf("%d", deadlineFails)}
+	fileInfo, err := file.Stat()
+	if fileInfo.Size() == 0 {
+		header := []string{"Timestamp", "Epoch", "FunctionName", "ExecutionTime", "ExecutionFailed"}
+		if err := writer.Write(header); err != nil {
+			return err
+		}
+	}
+
+	record := []string{timestamp, fmt.Sprintf("%d", epoch), functionName, fmt.Sprintf("%f", executionTime), fmt.Sprintf("%d", failed)}
 	return writer.Write(record)
 }
 
 func ConnectToPrometheus() bool {
 	client, err := api.NewClient(api.Config{
-		Address: "http://172.16.2.182:9091",
+		Address: "http://172.16.5.198:9091",
 	})
 	if err != nil {
 		log.Fatalf("Error creating Prometheus client: %v", err)
@@ -171,36 +174,47 @@ func ConnectToPrometheus() bool {
 	return true
 }
 
-func SaveMetrics(epoch int32) {
-	if v1api == nil {
-		log.Printf("Prometheus client is nil")
-		return
+func RetryConnectToPrometheus(maxRetries int, retryInterval time.Duration) bool {
+	for i := 0; i < maxRetries; i++ {
+		log.Printf("Prometheus client is nil. Attempting to reconnect... (attempt %d of %d)", i + 1, maxRetries)
+		ConnectToPrometheus()
+		if v1api != nil {
+			log.Println("Successfully connected to Prometheus")
+			return true
+		}
+		time.Sleep(retryInterval) // Wait before the next attempt
 	}
 
-	epochDuration := config.GetInt(config.EPOCH_DURATION, 20)
+	log.Println("Failed to connect to Prometheus after multiple attempts")
+	return false
+}
 
-	cpuQuery := fmt.Sprintf(`avg(avg_over_time(sedge_node_cpu_usage[%ds])) by (instance)`, epochDuration)
-	memQuery := fmt.Sprintf(`avg(avg_over_time(sedge_node_memory_usage[%ds])) by (instance)`, epochDuration)
-	deadlineQuery := `sedge_deadline_failures`
+func SaveMetrics(epoch int32) {
+	if v1api == nil {
+		success := RetryConnectToPrometheus(3, 1*time.Second)
+		if !success {
+			return
+		}
+	}
 
-	cpuUsage, err := queryPrometheus(cpuQuery, time.Duration(epochDuration)*time.Second)
+	epochDuration := config.GetInt(config.EPOCH_DURATION, 15)
+
+	cpuQuery := fmt.Sprintf(`avg(avg_over_time(sedge_node_cpu_usage[%dm])) by (instance)`, epochDuration)
+	memQuery := fmt.Sprintf(`avg(avg_over_time(sedge_node_memory_usage[%dm])) by (instance)`, epochDuration)
+
+	cpuUsage, err := queryPrometheus(cpuQuery, time.Duration(epochDuration)*time.Minute)
 	if err != nil {
 		fmt.Errorf("Error querying Prometheus for CPU: %v", err)
 	}
 
 	nodeCpuAverages := calculateAveragePerNode(cpuUsage)
 
-	memoryUsage, err := queryPrometheus(memQuery, time.Duration(epochDuration)*time.Second)
+	memoryUsage, err := queryPrometheus(memQuery, time.Duration(epochDuration)*time.Minute)
 	if err != nil {
 		fmt.Errorf("Error querying Prometheus for Memory: %v", err)
 	}
 
 	nodeMemoryAverages := calculateAveragePerNode(memoryUsage)
-
-	deadlineFailures, err := queryPrometheusCurrent(deadlineQuery)
-	if err != nil {
-		fmt.Errorf("Error querying Prometheus for Deadline Failures: %v", err)
-	}
 
 	timestamp := time.Now().Format(time.RFC3339)
 
@@ -210,27 +224,10 @@ func SaveMetrics(epoch int32) {
 			memAvg = 0
 		}
 
-		filename := fmt.Sprintf("exported_data/usage_%dmin_%dfunctions_node%s.csv", config.GetInt(config.EPOCH_DURATION, 20), config.GetInt(config.REGISTERED_FUNCTIONS, 0), strings.Split(node, ":")[0])
-		if err := appendToCSV(filename, timestamp, epoch, cpuAvg, memAvg); err != nil {
+		filename := fmt.Sprintf("exported_data/usage_%dmin_%dfunctions_node%s.csv", config.GetInt(config.EPOCH_DURATION, 15), config.GetInt(config.REGISTERED_FUNCTIONS, 0), strings.Split(node, ":")[0])
+		if err := appendToCSVUsage(filename, timestamp, epoch, cpuAvg, memAvg); err != nil {
 			log.Fatalf("Error writing to CSV for node %s: %v", node, err)
 		}
-	}
-
-	totalFailures := make(map[string]float64)
-	if vector, ok := deadlineFailures.(model.Vector); ok {
-		for _, sample := range vector {
-			functionName := string(sample.Metric["function"])
-			totalFailures[functionName] = float64(sample.Value)
-		}
-	} else {
-		//fmt.Println("Expected vector type")
-		return
-	}
-
-	filename := fmt.Sprintf("exported_data/deadline_failures_%dmin_%dfunctions.csv", config.GetInt(config.EPOCH_DURATION, 20), config.GetInt(config.REGISTERED_FUNCTIONS, 0))
-	if err := appendToCSVFailures(filename, timestamp, epoch, totalFailures); err != nil {
-		fmt.Println("Error appending to CSV file:", err)
-		return
 	}
 }
 
@@ -245,18 +242,18 @@ func RecordSolverMetrics(activeNodes []int32, epoch int32, solverFails int, node
 		systemPowerConsumption += int32(nodePowerConsumption[i]) * value
 	}
 
-	filename := fmt.Sprintf("exported_data/solver_%dmin_%dfunctions.csv", config.GetInt(config.EPOCH_DURATION, 20), config.GetInt(config.REGISTERED_FUNCTIONS, 0))
+	filename := fmt.Sprintf("exported_data/solver_%dmin_%dfunctions.csv", config.GetInt(config.EPOCH_DURATION, 15), config.GetInt(config.REGISTERED_FUNCTIONS, 0))
 	if err := appendToCSVSolver(filename, timestamp, epoch, numActiveNodes, solverFails, systemPowerConsumption); err != nil {
 		log.Fatalf("Error writing to CSV: %v", err)
 	}
 }
 
 // Function to record function metrics
-func RecordFunctionMetrics(epoch int32, deadlineFails int) {
+func RecordFunctionMetrics(epoch int, functionName string, executionTime float64, failed int) {
 	timestamp := time.Now().Format(time.RFC3339)
 
-	filename := fmt.Sprintf("exported_data/deadline_failures_%dmin_%dfunctions.csv", config.GetInt(config.EPOCH_DURATION, 20), config.GetInt(config.REGISTERED_FUNCTIONS, 0))
-	if err := appendToCSVFunction(filename, timestamp, epoch, deadlineFails); err != nil {
+	filename := fmt.Sprintf("exported_data/functions_execution_time_%dmin_%dfunctions.csv", config.GetInt(config.EPOCH_DURATION, 15), config.GetInt(config.REGISTERED_FUNCTIONS, 0))
+	if err := appendToCSVFunction(filename, timestamp, epoch, functionName, executionTime, failed); err != nil {
 		log.Fatalf("Error writing to CSV: %v", err)
 	}
 }

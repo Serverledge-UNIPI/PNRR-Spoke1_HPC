@@ -13,15 +13,14 @@ def solve():
         number_of_functions = data['number_of_functions']
         node_memory = data['node_memory']
         node_capacity = data['node_capacity']
-        maximum_capacity = data['maximum_capacity']
         node_ipc = data['node_ipc']
         node_power_consumption = data['node_power_consumption']
         function_memory = data['function_memory']
         function_workload = data['function_workload']
         function_deadline = data['function_deadline']
         function_peak_invocations = data['function_peak_invocations']
-        
-        results = start_solver(number_of_nodes, number_of_functions, node_memory, node_capacity, maximum_capacity, node_ipc, node_power_consumption,
+
+        results = start_solver(number_of_nodes, number_of_functions, node_memory, node_capacity, node_ipc, node_power_consumption,
             function_memory, function_workload, function_deadline, function_peak_invocations)
         
         return jsonify(results)

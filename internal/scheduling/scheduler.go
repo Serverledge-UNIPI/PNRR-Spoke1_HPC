@@ -70,12 +70,10 @@ func Run(p Policy) {
 				metrics.AddCompletedInvocation(c.Fun.Name)
 				if c.ExecReport.SchedAction != SCHED_ACTION_OFFLOAD {
 					metrics.AddFunctionDurationValue(c.Fun.Name, c.ExecReport.Duration)
-					metrics.AddDeadlineFailures(c.Fun.Name, (float64(c.Fun.Deadline) / 10e3), c.ExecReport.Duration)
 				}
 			}
 		}
 	}
-
 }
 
 // SubmitRequest submits a newly arrived request for scheduling and execution

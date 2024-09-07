@@ -2,7 +2,6 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric import padding
 
-
 def handler(params, context):
     try:
         message = str(params["m"])
@@ -31,9 +30,6 @@ def handler(params, context):
             )
         decrypted_message = decrypted_message.decode('utf-8')
 
-        result = {"Encrypted message": encrypted_message.hex(), "Decrypted message": decrypted_message}
+        return {"Encrypted message": encrypted_message.hex(), "Decrypted message": decrypted_message}
     except Exception as e:
-        print(e)
-        result = {"Error": str(e)}
-
-    return result
+        return {"Error": str(e)}

@@ -17,7 +17,9 @@ import (
 	"github.com/grussorusso/serverledge/internal/function"
 	"github.com/grussorusso/serverledge/internal/registration"
 	"github.com/grussorusso/serverledge/internal/solver"
-	
+
+	"github.com/grussorusso/serverledge/internal/metrics"
+
 	"github.com/labstack/echo/v4"
 	"context"
 )
@@ -121,9 +123,16 @@ func handleRequest(c echo.Context) error {
 			if err != nil {
 				log.Fatalf("Error while decoding JSON: %v", err)
 			}
-			// TODO: Write "DEADLINE FAILURES" metric based on the executionReport
+			
+			// Record function execution time metric based on the executionReport
+			if metrics.Enabled {
+				metrics.RecordFunctionMetrics(epoch, proxyIdentifier, executionReport.Duration, 0)
+			}
 		} else {
-			// TODO: Write "FAILED INVOCATIONS" metric based on the executionReport
+			// Record failed invocations
+			if metrics.Enabled {
+				metrics.RecordFunctionMetrics(epoch, proxyIdentifier, 0, 1)
+			}
 		}
 	}
 
@@ -140,6 +149,8 @@ func handleRequest(c echo.Context) error {
 // StartReverseProxy initializes and starts a reverse proxy server with load balancing capabilities
 func StartReverseProxy(r *registration.Registry, region string) {
 	registry := &registration.Registry{Area: region}
+
+	go metrics.Init()
 
 	proxyMap = newFunctionProxyMap()
 	if err := updateDefaultCloudTargets(region); err != nil {
