@@ -18,7 +18,7 @@ def start_edf(functions, nodes):
     solver_constants = data.get('constants', {})['solver']
     logging = solver_constants['console_logging']
 
-    state = True
+    state = "FEASIBLE"
 
     node_instances = {i: [0] * len(functions) for i in range(len(nodes))}
     function_capacities = {i: [0] * len(nodes) for i in range(len(functions))}
@@ -35,8 +35,7 @@ def start_edf(functions, nodes):
             placed = False
             for node in nodes:
                 function_required_capacity = function['workload'] / ((function['deadline'] / 1000) * (node['ipc']/10))
-                if (node['maximum_capacity'] >= function_required_capacity and node['total_memory'] >= function['memory'] and
-                        node['total_capacity'] >= function_required_capacity):
+                if (node['total_memory'] >= function['memory'] and node['total_capacity'] >= function_required_capacity):
 
                     if 'hosted_functions' not in node:
                         node['hosted_functions'] = {}
@@ -59,7 +58,7 @@ def start_edf(functions, nodes):
                     placed_invocations += 1
                     break
             if not placed:
-                state = False
+                state = "INFEASIBLE"
                 break
 
     for node in nodes:
@@ -71,10 +70,10 @@ def start_edf(functions, nodes):
                 function = next(f for f in functions if f['id'] == function_id)
                 log(f'   Function {function_id}: Instances={details["peak_invocations"]}, Capacity={details["capacity_assigned"]:.2f} Mhz, Deadline: {(function["deadline"]/1000):.3f} s', logging)
         
-        log(f'   Memory: {node["total_memory"]:.2f} (Mb), Capacity: {node["total_capacity"] / (10 ** 3)} (Ghz), IPC: {node["ipc"]}', logging)
+        log(f'   Memory: {node["total_memory"]:.2f} (Mb), Capacity: {node["total_capacity"] / (10 ** 3)} (Ghz), IPC: {node["ipc"]}, Power consumption: {node["power_consumption"]} (Watt)', logging)
         log(f'   Memory available: {node["total_memory"]} (Mb), Capacity available: {node["total_capacity"] / (10 ** 3):.2f} (Ghz)\n', logging)
 
-    if not state:
+    if state == "INFEASIBLE":
         node_instances = {i: [0] * len(functions) for i in range(len(nodes))}
         function_capacities = {i: [0] * len(nodes) for i in range(len(functions))}
         
@@ -82,7 +81,7 @@ def start_edf(functions, nodes):
             node['is_active'] = True
 
     results = {
-        'solver_status_name': str(state),
+        'solver_status_name': state,
         'solver_walltime': None,
         'objective_value': sum(int(node.get('is_active', False)) * node['power_consumption'] for node in nodes),
         'active_nodes_indexes': [1 if node.get('is_active', False) else 0 for node in nodes],

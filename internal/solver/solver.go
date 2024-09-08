@@ -26,6 +26,10 @@ import (
 
 var epoch int32
 var (
+	SolverStatus string
+	StatusMu sync.Mutex
+)
+var (
 	functionsPeakInvocationsMap map[string][]int // contains peak invocations read from a json file (should be predicted)
 	mu sync.Mutex
 )
@@ -65,27 +69,94 @@ func Init() {
 	epoch = 0
 	solverTicker := time.NewTicker(getEpochDuration())
 	defer solverTicker.Stop()
-
-	// Attempt to connect data exporter to Prometheus
-	if metrics.Enabled {
-		if err := metrics.ConnectToPrometheus(); !err {
-			log.Printf("Failed to connect to Prometheus: %v", err)
+	
+	StatusMu.Lock()
+	SolverStatus = "UNKNOWN"
+	StatusMu.Unlock()
+	
+	isSolverNode := config.GetBool(config.IS_SOLVER_NODE, false)
+	if isSolverNode {
+		// Attempt to connect data exporter to Prometheus
+		if metrics.Enabled {
+			if err := metrics.ConnectToPrometheus(); !err {
+				log.Printf("Failed to connect to Prometheus: %v", err)
+			}
 		}
-	}
 
-	// Peak invocations prediction
-	createMapPeakInvocations()
+		// Peak invocations prediction
+		createMapPeakInvocations()
 
-	// TODO: remove
-	time.Sleep(10 * time.Second)
-	solve()
+		// TODO: remove
+		time.Sleep(10 * time.Second)
+		solve()
 
-	for {
-		select {
-		case <-solverTicker.C:
-			solve()
+		for {
+			select {
+			case <-solverTicker.C:
+				solve()
+			}
 		}
+	} else {
+		watchFunctionsAllocation()
 	}
+}
+
+func watchFunctionsAllocation() {
+    log.Println("Running functions allocation watcher")
+
+    etcdClient, err := utils.GetEtcdClient()
+    if err != nil {
+        log.Fatalf("Error getting etcd client: %v", err)
+    }
+
+    watchChan := etcdClient.Watch(context.Background(), "allocation")
+    for watchResp := range watchChan {
+        for _, event := range watchResp.Events {
+            switch event.Type {
+            case clientv3.EventTypePut:
+                handlePutEvent(event)
+
+            case clientv3.EventTypeDelete:
+                handleDeleteEvent()
+
+            default:
+                log.Printf("Unhandled event type: %v", event.Type)
+            }
+        }
+    }
+}
+
+func handlePutEvent(event *clientv3.Event) {
+    log.Println("Etcd Event Type: PUT")
+
+    // Deserialize JSON to obtain the SystemFunctionsAllocation struct
+    var allocation SystemFunctionsAllocation
+    if err := json.Unmarshal(event.Kv.Value, &allocation); err != nil {
+        log.Printf("Error unmarshalling allocation: %v", err)
+        return
+    }
+
+    // Update solver status
+    StatusMu.Lock()
+	if len(allocation) == 0 {
+		SolverStatus = "INFEASIBLE"
+	} else {
+		SolverStatus = "FEASIBLE"
+	}
+	log.Printf("Solver status: %s", SolverStatus)
+    StatusMu.Unlock()
+
+    epoch++
+}
+
+func handleDeleteEvent() {
+    log.Println("Etcd Event Type: DELETE")
+    
+    // Reset solver status
+    StatusMu.Lock()
+    SolverStatus = "UNKNOWN"
+	log.Printf("Solver status: %s", SolverStatus)
+    StatusMu.Unlock()
 }
 
 func solve() {
@@ -94,6 +165,7 @@ func solve() {
 	// Solver URL
 	defaultHostport := fmt.Sprintf("%s:5000", utils.GetIpAddress().String())
 	url := fmt.Sprintf("http://%s/solve_with_cp_sat", config.GetString(config.SOLVER_ADDRESS, defaultHostport))
+	//url := fmt.Sprintf("http://%s/solve_with_edf", config.GetString(config.SOLVER_ADDRESS, defaultHostport))
 
 	// Get all available servers and functions
 	serversMap := registration.GetServersMap()
@@ -104,30 +176,30 @@ func solve() {
 	}
 
 	// Log system information
-	for _, value := range serversMap {
-		log.Println("-----------------------------")
-		log.Printf("URL: %s\n", value.Url)
-		log.Printf("Available Warm Containers: %v\n", value.AvailableWarmContainers)
-		log.Printf("Available Memory (MB): %d\n", value.AvailableMemMB)
-		log.Printf("Available CPUs: %f\n", value.AvailableCPUs)
-		log.Printf("Drop Count: %d\n", value.DropCount)
-		log.Printf("Total Memory (MB): %v\n", value.TotalMemoryMB)
-		log.Printf("Computational Capacity: %f\n", value.ComputationalCapacity)
-		log.Printf("Maximum Capacity: %f\n", value.MaximumCapacity)
-		log.Printf("IPC: %v\n", value.IPC)
-		log.Printf("Power Consumption: %v\n", value.PowerConsumption)
-		log.Println("-----------------------------")
-	}
+	//for _, value := range serversMap {
+	//	log.Println("-----------------------------")
+	//	log.Printf("URL: %s\n", value.Url)
+	//	log.Printf("Available Warm Containers: %v\n", value.AvailableWarmContainers)
+	//	log.Printf("Available Memory (MB): %d\n", value.AvailableMemMB)
+	//	log.Printf("Available CPUs: %f\n", value.AvailableCPUs)
+	//	log.Printf("Drop Count: %d\n", value.DropCount)
+	//	log.Printf("Total Memory (MB): %v\n", value.TotalMemoryMB)
+	//	log.Printf("Computational Capacity: %f\n", value.ComputationalCapacity)
+	//	log.Printf("Maximum Capacity: %f\n", value.MaximumCapacity)
+	//	log.Printf("IPC: %v\n", value.IPC)
+	//	log.Printf("Power Consumption: %v\n", value.PowerConsumption)
+	//	log.Println("-----------------------------")
+	//}
 
-	for _, functionName := range functions {
-		log.Println("-----------------------------")
-		f, _ := function.GetFunction(functionName)
-		log.Printf("Function Name: %s\n", f.Name)
-		log.Printf("Function Memory (MB): %v\n", f.MemoryMB)
-		log.Printf("Workload: %v\n", f.Workload)
-		log.Printf("Deadline (ms): %v\n", f.Deadline)
-		log.Println("-----------------------------")
-	}
+	//for _, functionName := range functions {
+	//	log.Println("-----------------------------")
+	//	f, _ := function.GetFunction(functionName)
+	//	log.Printf("Function Name: %s\n", f.Name)
+	//	log.Printf("Function Memory (MB): %v\n", f.MemoryMB)
+	//	log.Printf("Workload: %v\n", f.Workload)
+	//	log.Printf("Deadline (ms): %v\n", f.Deadline)
+	//	log.Println("-----------------------------")
+	//}
 
 	var numberOfNodes int = len(serversMap) + 1
 	var numberOfFunctions int = len(functions)
@@ -188,18 +260,23 @@ func solve() {
 		log.Printf("Node %d (%s) has instances: %v", nodeId, nodeIp[nodeId], instances)
 	}
 
+    StatusMu.Lock()
+	SolverStatus = results.SolverStatusName
+    StatusMu.Unlock()
+
+	var functionsAllocation = make(SystemFunctionsAllocation)
 	if results.SolverStatusName == "FEASIBLE" || results.SolverStatusName == "OPTIMAL" {
 		// Retrive functions allocation
-		functionsAllocation, err := computeFunctionsAllocation(results, functions, nodeIp)
+		functionsAllocation, err = computeFunctionsAllocation(results, functions, nodeIp)
 		if err != nil {
 			log.Fatalf("Error processing functions allocation: %v", err)
 			return
 		}
+	}
 
-		// Save functions allocation to Etcd
-		if err := functionsAllocation.saveToEtcd(); err != nil {
-			log.Fatalf("Error saving functions allocation to Etcd: %v", err)
-		}
+	// Save functions allocation to Etcd
+	if err := functionsAllocation.saveToEtcd(); err != nil {
+		log.Fatalf("Error saving functions allocation to Etcd: %v", err)
 	}
 
 	if metrics.Enabled {

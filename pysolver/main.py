@@ -35,7 +35,6 @@ def solve_edf():
         number_of_functions = data['number_of_functions']
         node_memory = data['node_memory']
         node_capacity = data['node_capacity']
-        maximum_capacity = data['maximum_capacity']
         node_ipc = data['node_ipc']
         node_power_consumption = data['node_power_consumption']
         function_memory = data['function_memory']
@@ -48,7 +47,6 @@ def solve_edf():
                 'id': i,
                 'total_memory': node_memory[i],
                 'total_capacity': node_capacity[i],
-                'maximum_capacity': maximum_capacity[i],
                 'power_consumption': node_power_consumption[i],
                 'ipc': node_ipc[i]
             } for i in range(number_of_nodes)

@@ -63,20 +63,19 @@ func handleRequest(c echo.Context) error {
     
     // Get the request URI
     requestURI := c.Request().RequestURI
-    
-    // Check if the URI starts with "/invoke/"
+
     if strings.HasPrefix(requestURI, "/invoke/") {
 		// Check if allocation is in the local cache
 		mu.Lock()
-        if localAllocation != nil {
-            // Extract the function name by removing the "/invoke/" prefix
-            proxyIdentifier = strings.TrimPrefix(requestURI, "/invoke/")
-			log.Printf("Allocation found")
-        } else {
+		if len(localAllocation) == 0 || localAllocation == nil {
             // Use default edge nodes if allocation is not found
             proxyIdentifier = "edge"
-			log.Printf("Allocation not found")
-        }
+			log.Printf("Allocation empty or not found")
+        } else {
+			// Extract the function name by removing the "/invoke/" prefix
+            proxyIdentifier = strings.TrimPrefix(requestURI, "/invoke/")
+			log.Printf("Allocation found")
+		}
 		mu.Unlock()
     } else {
         // Use default cloud nodes if the request is not an invoke one
@@ -113,7 +112,9 @@ func handleRequest(c echo.Context) error {
 		log.Fatalf("Error while reading response body: %v", err)
 	}
 
-	if strings.HasPrefix(c.Request().RequestURI, "/invoke/") {
+	if strings.HasPrefix(requestURI, "/invoke/") {
+		functionName := strings.TrimPrefix(requestURI, "/invoke/")
+		
 		// Check the status code
 		if resp.StatusCode == http.StatusOK {
 			var executionReport function.ExecutionReport
@@ -121,17 +122,17 @@ func handleRequest(c echo.Context) error {
 			// Decode the JSON into an ExecutionReport structure
 			err = json.Unmarshal(body, &executionReport)
 			if err != nil {
-				log.Fatalf("Error while decoding JSON: %v", err)
+				log.Fatalf("[%s] Error while decoding JSON: %v", functionName, err)
 			}
 			
 			// Record function execution time metric based on the executionReport
 			if metrics.Enabled {
-				metrics.RecordFunctionMetrics(epoch, proxyIdentifier, executionReport.Duration, 0)
+				metrics.RecordFunctionMetrics(epoch, functionName, executionReport.Duration, 0)
 			}
 		} else {
 			// Record failed invocations
 			if metrics.Enabled {
-				metrics.RecordFunctionMetrics(epoch, proxyIdentifier, 0, 1)
+				metrics.RecordFunctionMetrics(epoch, functionName, 0, 1)
 			}
 		}
 	}
