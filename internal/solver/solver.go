@@ -162,10 +162,14 @@ func handleDeleteEvent() {
 func solve() {
 	log.Println("Running solver")
 
+	if metrics.Enabled && epoch > 0 {
+		// Save node metrics through data exporter
+		metrics.SaveNodeMetrics(epoch - 1)
+	}
+
 	// Solver URL
 	defaultHostport := fmt.Sprintf("%s:5000", utils.GetIpAddress().String())
-	url := fmt.Sprintf("http://%s/solve_with_cp_sat", config.GetString(config.SOLVER_ADDRESS, defaultHostport))
-	//url := fmt.Sprintf("http://%s/solve_with_edf", config.GetString(config.SOLVER_ADDRESS, defaultHostport))
+	url := fmt.Sprintf("http://%s/solve_with_%s", config.GetString(config.SOLVER_ADDRESS, defaultHostport), config.GetString(config.SOLVER_TYPE, "cp_sat"))
 
 	// Get all available servers and functions
 	serversMap := registration.GetServersMap()
@@ -253,7 +257,7 @@ func solve() {
 	log.Printf("Active nodes: %v", results.ActiveNodesIndexes)
 
 	for functionId, functionCapacity := range results.FunctionCapacities {
-		log.Printf("Function %d computational capacities: %v", functionId, functionCapacity)
+		log.Printf("Function '%s' computational capacities: %v", functions[functionId], functionCapacity)
 	}
 
 	for nodeId, instances := range results.NodeInstances {
@@ -284,14 +288,13 @@ func solve() {
 		if results.SolverStatusName != "FEASIBLE" && results.SolverStatusName != "OPTIMAL" {
 			solverFails = 1
 		}
-		metrics.RecordSolverMetrics(results.ActiveNodesIndexes, epoch, solverFails, nodeInfo.PowerConsumption)
-
+		
 		// Save solver metrics through data exporter
-		metrics.SaveMetrics(epoch)
+		metrics.SaveSolverMetrics(results.ActiveNodesIndexes, epoch, solverFails, nodeInfo.PowerConsumption)
+		
 	}
-	
+
 	epoch++
-	log.Println("Solver terminated")
 }
 
 func prepareNodeInfo(serversMap map[string]*registration.StatusInformation) (NodeInformation, []string) {

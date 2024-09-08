@@ -189,7 +189,7 @@ func RetryConnectToPrometheus(maxRetries int, retryInterval time.Duration) bool 
 	return false
 }
 
-func SaveMetrics(epoch int32) {
+func SaveNodeMetrics(epoch int32) {
 	if v1api == nil {
 		success := RetryConnectToPrometheus(3, 1*time.Second)
 		if !success {
@@ -204,20 +204,19 @@ func SaveMetrics(epoch int32) {
 
 	cpuUsage, err := queryPrometheus(cpuQuery, time.Duration(epochDuration)*time.Minute)
 	if err != nil {
-		fmt.Errorf("Error querying Prometheus for CPU: %v", err)
+		fmt.Errorf("Error querying Prometheus for CPU usage: %v", err)
 	}
 
 	nodeCpuAverages := calculateAveragePerNode(cpuUsage)
 
 	memoryUsage, err := queryPrometheus(memQuery, time.Duration(epochDuration)*time.Minute)
 	if err != nil {
-		fmt.Errorf("Error querying Prometheus for Memory: %v", err)
+		fmt.Errorf("Error querying Prometheus for memory usage: %v", err)
 	}
 
 	nodeMemoryAverages := calculateAveragePerNode(memoryUsage)
 
 	timestamp := time.Now().Format(time.RFC3339)
-
 	for node, cpuAvg := range nodeCpuAverages {
 		memAvg, exists := nodeMemoryAverages[node]
 		if !exists {
@@ -232,7 +231,7 @@ func SaveMetrics(epoch int32) {
 }
 
 // Function to record solver metrics
-func RecordSolverMetrics(activeNodes []int32, epoch int32, solverFails int, nodePowerConsumption []int) {
+func SaveSolverMetrics(activeNodes []int32, epoch int32, solverFails int, nodePowerConsumption []int) {
 	timestamp := time.Now().Format(time.RFC3339)
 
 	var numActiveNodes int
@@ -248,7 +247,7 @@ func RecordSolverMetrics(activeNodes []int32, epoch int32, solverFails int, node
 	}
 }
 
-// Function to record function metrics
+// Function to record execution time
 func RecordFunctionMetrics(epoch int, functionName string, executionTime float64, failed int) {
 	timestamp := time.Now().Format(time.RFC3339)
 

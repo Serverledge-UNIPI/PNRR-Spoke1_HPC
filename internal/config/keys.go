@@ -68,6 +68,7 @@ const SCHEDULER_QUEUE_CAPACITY = "scheduler.queue.capacity"
 // True if the current node is a solver node
 const IS_SOLVER_NODE = "solver"
 const SOLVER_ADDRESS = "solver.address"
+const SOLVER_TYPE = "solver.type"
 
 // Epoch duration expressed in minutes
 const EPOCH_DURATION = "epoch.duration"
