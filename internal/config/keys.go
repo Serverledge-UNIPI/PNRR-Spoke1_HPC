@@ -73,9 +73,6 @@ const SOLVER_TYPE = "solver.type"
 // Epoch duration expressed in minutes
 const EPOCH_DURATION = "epoch.duration"
 
-// TODO: remove
-const REGISTERED_FUNCTIONS = "registered.functions" 
-
 const NODE_POWER_CONSUMPTION = "node.power.consumption"
 const NODE_IPC = "node.ipc"
 

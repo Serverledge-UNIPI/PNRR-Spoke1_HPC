@@ -116,7 +116,7 @@ func appendToCSVUsage(filename, timestamp string, epoch int32, cpuAvg, memAvg fl
 }
 
 // Function to append solver results to a CSV file
-func appendToCSVSolver(filename, timestamp string, epoch int32, numActiveNodes int, solverFails int, systemPowerConsumption int32) error {
+func appendToCSVSolver(filename, timestamp string, epoch int32, numActiveNodes int, solverFails int, systemPowerConsumption float64) error {
 	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -134,7 +134,7 @@ func appendToCSVSolver(filename, timestamp string, epoch int32, numActiveNodes i
 		}
 	}
 
-	record := []string{timestamp, fmt.Sprintf("%d", epoch), fmt.Sprintf("%d", numActiveNodes), fmt.Sprintf("%d", solverFails), fmt.Sprintf("%d", systemPowerConsumption)}
+	record := []string{timestamp, fmt.Sprintf("%d", epoch), fmt.Sprintf("%d", numActiveNodes), fmt.Sprintf("%d", solverFails), fmt.Sprintf("%f", systemPowerConsumption)}
 	return writer.Write(record)
 }
 
@@ -223,7 +223,7 @@ func SaveNodeMetrics(epoch int32) {
 			memAvg = 0
 		}
 
-		filename := fmt.Sprintf("exported_data/usage_%dmin_%dfunctions_node%s.csv", config.GetInt(config.EPOCH_DURATION, 15), config.GetInt(config.REGISTERED_FUNCTIONS, 0), strings.Split(node, ":")[0])
+		filename := fmt.Sprintf("exported_data/usage_%dmin_%s_node%s.csv", config.GetInt(config.EPOCH_DURATION, 15), config.GetString(config.SOLVER_TYPE, "milp"), strings.Split(node, ":")[0])
 		if err := appendToCSVUsage(filename, timestamp, epoch, cpuAvg, memAvg); err != nil {
 			log.Fatalf("Error writing to CSV for node %s: %v", node, err)
 		}
@@ -231,18 +231,16 @@ func SaveNodeMetrics(epoch int32) {
 }
 
 // Function to record solver metrics
-func SaveSolverMetrics(activeNodes []int32, epoch int32, solverFails int, nodePowerConsumption []int) {
+func SaveSolverMetrics(activeNodes []int32, epoch int32, solverFails int, objectiveValue float64) {
 	timestamp := time.Now().Format(time.RFC3339)
 
 	var numActiveNodes int
-	var systemPowerConsumption int32
-	for i, value := range activeNodes {
+	for _, value := range activeNodes {
 		numActiveNodes += int(value) // Convert int32 to int
-		systemPowerConsumption += int32(nodePowerConsumption[i]) * value
 	}
 
-	filename := fmt.Sprintf("exported_data/solver_%dmin_%dfunctions.csv", config.GetInt(config.EPOCH_DURATION, 15), config.GetInt(config.REGISTERED_FUNCTIONS, 0))
-	if err := appendToCSVSolver(filename, timestamp, epoch, numActiveNodes, solverFails, systemPowerConsumption); err != nil {
+	filename := fmt.Sprintf("exported_data/solver_%dmin_%s.csv", config.GetInt(config.EPOCH_DURATION, 15), config.GetString(config.SOLVER_TYPE, "milp"))
+	if err := appendToCSVSolver(filename, timestamp, epoch, numActiveNodes, solverFails, objectiveValue); err != nil {
 		log.Fatalf("Error writing to CSV: %v", err)
 	}
 }
@@ -251,7 +249,7 @@ func SaveSolverMetrics(activeNodes []int32, epoch int32, solverFails int, nodePo
 func RecordFunctionMetrics(epoch int, functionName string, executionTime float64, failed int) {
 	timestamp := time.Now().Format(time.RFC3339)
 
-	filename := fmt.Sprintf("exported_data/functions_execution_time_%dmin_%dfunctions.csv", config.GetInt(config.EPOCH_DURATION, 15), config.GetInt(config.REGISTERED_FUNCTIONS, 0))
+	filename := fmt.Sprintf("exported_data/functions_execution_time_%dmin_%s.csv", config.GetInt(config.EPOCH_DURATION, 15), config.GetString(config.SOLVER_TYPE, "milp"))
 	if err := appendToCSVFunction(filename, timestamp, epoch, functionName, executionTime, failed); err != nil {
 		log.Fatalf("Error writing to CSV: %v", err)
 	}

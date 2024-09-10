@@ -1,3 +1,0 @@
-etcd.address: "172.16.2.182:2379"
-cloud.server.url: "http://172.16.2.182:1326"
-lb: energyaware

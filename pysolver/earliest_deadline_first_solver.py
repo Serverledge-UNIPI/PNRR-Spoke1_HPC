@@ -28,6 +28,10 @@ def start_edf(functions, nodes):
 
     # Order nodes by their capacity and memory    
     nodes.sort(key=lambda n: (n['total_capacity'], n['total_memory']), reverse=True)
+
+    for node in nodes:
+        node['total_memory_available'] = node['total_memory']
+        node['total_capacity_available'] = node['total_capacity']
     
     for function in functions:
         placed_invocations = 0
@@ -35,7 +39,7 @@ def start_edf(functions, nodes):
             placed = False
             for node in nodes:
                 function_required_capacity = function['workload'] / ((function['deadline'] / 1000) * (node['ipc']/10))
-                if (node['total_memory'] >= function['memory'] and node['total_capacity'] >= function_required_capacity):
+                if (node['total_memory_available'] >= function['memory'] and node['total_capacity_available'] >= function_required_capacity):
 
                     if 'hosted_functions' not in node:
                         node['hosted_functions'] = {}
@@ -52,8 +56,8 @@ def start_edf(functions, nodes):
                     node_instances[node['id']][function['id']] = node['hosted_functions'][function['id']]['peak_invocations']
                     function_capacities[function['id']][node['id']] = function_required_capacity
                     
-                    node['total_memory'] -= function['memory']
-                    node['total_capacity'] -= function_required_capacity
+                    node['total_memory_available'] -= function['memory']
+                    node['total_capacity_available'] -= function_required_capacity
                     placed = True
                     placed_invocations += 1
                     break
@@ -71,9 +75,9 @@ def start_edf(functions, nodes):
                 log(f'   Function {function_id}: Instances={details["peak_invocations"]}, Capacity={details["capacity_assigned"]:.2f} Mhz, Deadline: {(function["deadline"]/1000):.3f} s', logging)
         
         log(f'   Memory: {node["total_memory"]:.2f} (Mb), Capacity: {node["total_capacity"] / (10 ** 3)} (Ghz), IPC: {node["ipc"]}, Power consumption: {node["power_consumption"]} (Watt)', logging)
-        log(f'   Memory available: {node["total_memory"]} (Mb), Capacity available: {node["total_capacity"] / (10 ** 3):.2f} (Ghz)\n', logging)
+        log(f'   Memory available: {node["total_memory_available"]} (Mb), Capacity available: {node["total_capacity_available"] / (10 ** 3):.2f} (Ghz)\n', logging)
 
-    if state == "INFEASIBLE":
+    if state == 'INFEASIBLE':
         node_instances = {i: [0] * len(functions) for i in range(len(nodes))}
         function_capacities = {i: [0] * len(nodes) for i in range(len(functions))}
         

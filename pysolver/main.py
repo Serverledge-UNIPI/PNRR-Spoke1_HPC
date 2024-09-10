@@ -5,7 +5,7 @@ import argparse
 
 app = Flask(__name__)
 
-@app.route('/solve_with_cp_sat', methods=['POST'])
+@app.route('/solve_milp', methods=['POST'])
 def solve():
     try:
         data = request.json
@@ -27,7 +27,7 @@ def solve():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
     
-@app.route('/solve_with_edf', methods=['POST'])
+@app.route('/solve_edf', methods=['POST'])
 def solve_edf():
     try:
         data = request.json

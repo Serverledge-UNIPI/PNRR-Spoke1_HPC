@@ -169,7 +169,7 @@ func solve() {
 
 	// Solver URL
 	defaultHostport := fmt.Sprintf("%s:5000", utils.GetIpAddress().String())
-	url := fmt.Sprintf("http://%s/solve_with_%s", config.GetString(config.SOLVER_ADDRESS, defaultHostport), config.GetString(config.SOLVER_TYPE, "cp_sat"))
+	url := fmt.Sprintf("http://%s/solve_%s", config.GetString(config.SOLVER_ADDRESS, defaultHostport), config.GetString(config.SOLVER_TYPE, "milp"))
 
 	// Get all available servers and functions
 	serversMap := registration.GetServersMap()
@@ -180,20 +180,20 @@ func solve() {
 	}
 
 	// Log system information
-	//for _, value := range serversMap {
-	//	log.Println("-----------------------------")
-	//	log.Printf("URL: %s\n", value.Url)
-	//	log.Printf("Available Warm Containers: %v\n", value.AvailableWarmContainers)
-	//	log.Printf("Available Memory (MB): %d\n", value.AvailableMemMB)
-	//	log.Printf("Available CPUs: %f\n", value.AvailableCPUs)
-	//	log.Printf("Drop Count: %d\n", value.DropCount)
-	//	log.Printf("Total Memory (MB): %v\n", value.TotalMemoryMB)
-	//	log.Printf("Computational Capacity: %f\n", value.ComputationalCapacity)
-	//	log.Printf("Maximum Capacity: %f\n", value.MaximumCapacity)
-	//	log.Printf("IPC: %v\n", value.IPC)
-	//	log.Printf("Power Consumption: %v\n", value.PowerConsumption)
-	//	log.Println("-----------------------------")
-	//}
+	for _, value := range serversMap {
+		log.Println("-----------------------------")
+		log.Printf("URL: %s\n", value.Url)
+		log.Printf("Available Warm Containers: %v\n", value.AvailableWarmContainers)
+		log.Printf("Available Memory (MB): %d\n", value.AvailableMemMB)
+		log.Printf("Available CPUs: %f\n", value.AvailableCPUs)
+		log.Printf("Drop Count: %d\n", value.DropCount)
+		log.Printf("Total Memory (MB): %v\n", value.TotalMemoryMB)
+		log.Printf("Computational Capacity: %f\n", value.ComputationalCapacity)
+		log.Printf("Maximum Capacity: %f\n", value.MaximumCapacity)
+		log.Printf("IPC: %v\n", value.IPC)
+		log.Printf("Power Consumption: %v\n", value.PowerConsumption)
+		log.Println("-----------------------------")
+	}
 
 	//for _, functionName := range functions {
 	//	log.Println("-----------------------------")
@@ -205,7 +205,7 @@ func solve() {
 	//	log.Println("-----------------------------")
 	//}
 
-	var numberOfNodes int = len(serversMap) + 1
+	var numberOfNodes int = len(serversMap)
 	var numberOfFunctions int = len(functions)
 
 	if numberOfFunctions == 0 {
@@ -290,21 +290,20 @@ func solve() {
 		}
 		
 		// Save solver metrics through data exporter
-		metrics.SaveSolverMetrics(results.ActiveNodesIndexes, epoch, solverFails, nodeInfo.PowerConsumption)
-		
+		metrics.SaveSolverMetrics(results.ActiveNodesIndexes, epoch, solverFails, results.ObjectiveValue)
 	}
 
 	epoch++
 }
 
 func prepareNodeInfo(serversMap map[string]*registration.StatusInformation) (NodeInformation, []string) {
-	nodeIp := make([]string, len(serversMap) + 1)
+	nodeIp := make([]string, len(serversMap))
 	nodeInfo := NodeInformation{
-		TotalMemoryMB:			make([]int, len(serversMap) + 1),
-		ComputationalCapacity:	make([]int, len(serversMap) + 1),
-		MaximumCapacity:      	make([]int, len(serversMap) + 1),
-		IPC:              		make([]int, len(serversMap) + 1),
-		PowerConsumption: 		make([]int, len(serversMap) + 1),
+		TotalMemoryMB:			make([]int, len(serversMap)),
+		ComputationalCapacity:	make([]int, len(serversMap)),
+		MaximumCapacity:      	make([]int, len(serversMap)),
+		IPC:              		make([]int, len(serversMap)),
+		PowerConsumption: 		make([]int, len(serversMap)),
 	}
 
 	i := 0
@@ -319,14 +318,6 @@ func prepareNodeInfo(serversMap map[string]*registration.StatusInformation) (Nod
         nodeIp[i] = server.Url
 		i++
     }
-
-    nodeInfo.TotalMemoryMB[i] = int(node.Resources.TotalMemoryMB)
-    nodeInfo.ComputationalCapacity[i] = int(node.Resources.ComputationalCapacity)
-    nodeInfo.MaximumCapacity[i] = int(node.Resources.MaximumCapacity)
-    nodeInfo.IPC[i] = int(node.Resources.IPC * 10)
-    nodeInfo.PowerConsumption[i] = int(node.Resources.PowerConsumption)
-
-	nodeIp[i] = fmt.Sprintf("http://%s:%d", utils.GetIpAddress().String(), config.GetInt(config.API_PORT, 1323))
 
 	return nodeInfo, nodeIp
 }
@@ -429,7 +420,7 @@ func (functionsAllocation *SystemFunctionsAllocation) saveToEtcd() error {
 	}
 
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	resp, err := etcdClient.Grant(ctx, int64(config.GetInt(config.EPOCH_DURATION, 15) * 60))
+	resp, err := etcdClient.Grant(ctx, int64(config.GetInt(config.EPOCH_DURATION, 15) * 60 ) + 20) // TODO: remove +20
 	if err != nil {
 		log.Fatal(err)
 		return err
