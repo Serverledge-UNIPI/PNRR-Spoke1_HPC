@@ -34,11 +34,10 @@ def start_edf(functions, nodes):
         node['total_capacity_available'] = node['total_capacity']
     
     for function in functions:
-        placed_invocations = 0
         for _ in range(0, function['peak_invocations']):
             placed = False
             for node in nodes:
-                function_required_capacity = function['workload'] / ((function['deadline'] / 1000) * (node['ipc']/10))
+                function_required_capacity = function['workload'] / ((function['deadline'] / 1000) * (node['ipc'] / 10))
                 if (node['total_memory_available'] >= function['memory'] and node['total_capacity_available'] >= function_required_capacity):
 
                     if 'hosted_functions' not in node:
@@ -58,8 +57,8 @@ def start_edf(functions, nodes):
                     
                     node['total_memory_available'] -= function['memory']
                     node['total_capacity_available'] -= function_required_capacity
+                    
                     placed = True
-                    placed_invocations += 1
                     break
             if not placed:
                 state = "INFEASIBLE"

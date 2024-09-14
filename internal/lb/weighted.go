@@ -25,11 +25,6 @@ func (r *Weighted) selectTarget() *url.URL {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.lbProxy == nil {
-		log.Println("lbProxy is nil")
-		return nil
-	}
-
 	nodes := r.lbProxy.getTargets()
 	if len(nodes) == 0 {
 		log.Println("No targets available")
@@ -47,7 +42,7 @@ func (r *Weighted) selectTarget() *url.URL {
 		}
 	}
 
-	log.Println("No node selected, this might indicate a configuration issue")
+	log.Println("No node selected. This might indicate a configuration issue")
 	return nil
 }
 

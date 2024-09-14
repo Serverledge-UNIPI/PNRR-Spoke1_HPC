@@ -151,6 +151,9 @@ func handlePutEvent(event *clientv3.Event) {
 
 func handleDeleteEvent() {
     log.Println("Etcd Event Type: DELETE")
+
+	// Destroy all containers
+	node.ShutdownAllContainers()
     
     // Reset solver status
     StatusMu.Lock()

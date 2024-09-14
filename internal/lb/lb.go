@@ -74,7 +74,6 @@ func handleRequest(c echo.Context) error {
         } else {
 			// Extract the function name by removing the "/invoke/" prefix
             proxyIdentifier = strings.TrimPrefix(requestURI, "/invoke/")
-			log.Printf("Allocation found")
 		}
 		mu.Unlock()
     } else {
